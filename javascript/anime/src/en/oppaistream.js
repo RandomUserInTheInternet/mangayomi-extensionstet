@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/src/en/oppaistream.js"
@@ -17,6 +17,10 @@ class DefaultExtension extends MProvider {
     constructor() {
         super();
         this.client = new Client();
+    }
+
+    getPreference(key) {
+        return new SharedPreferences().get(key);
     }
 
     getHeaders(url) {
@@ -62,7 +66,7 @@ class DefaultExtension extends MProvider {
     }
 
     async getPopular(page) {
-        const baseUrl = new SharedPreferences().get("overrideBaseUrl") || this.source.baseUrl;
+        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
         const url = `${baseUrl}/popular?page=${page}`;
         
         try {
@@ -77,7 +81,7 @@ class DefaultExtension extends MProvider {
     }
 
     async getLatestUpdates(page) {
-        const baseUrl = new SharedPreferences().get("overrideBaseUrl") || this.source.baseUrl;
+        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
         const url = `${baseUrl}/latest?page=${page}`;
         
         try {
@@ -92,7 +96,7 @@ class DefaultExtension extends MProvider {
     }
 
     async search(query, page, filters) {
-        const baseUrl = new SharedPreferences().get("overrideBaseUrl") || this.source.baseUrl;
+        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
         const url = `${baseUrl}/search?q=${encodeURIComponent(query)}&page=${page}`;
         
         try {
@@ -133,7 +137,7 @@ class DefaultExtension extends MProvider {
     }
 
     async getDetail(url) {
-        const baseUrl = new SharedPreferences().get("overrideBaseUrl") || this.source.baseUrl;
+        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
         const fullUrl = url.startsWith("http") ? url : `${baseUrl}${url}`;
         
         const doc = await this.request(fullUrl);
@@ -190,7 +194,7 @@ class DefaultExtension extends MProvider {
     }
 
     async getVideoList(url) {
-        const baseUrl = new SharedPreferences().get("overrideBaseUrl") || this.source.baseUrl;
+        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
         const fullUrl = url.startsWith("http") ? url : `${baseUrl}${url}`;
         
         const doc = await this.request(fullUrl);
@@ -269,13 +273,13 @@ class DefaultExtension extends MProvider {
 
     getSourcePreferences() {
         return [{
-            "key": "overrideBaseUrl",
-            "editTextPreference": {
-                "title": "Override BaseUrl",
-                "summary": this.source.baseUrl,
-                "value": this.source.baseUrl,
-                "dialogTitle": "Override BaseUrl",
-                "dialogMessage": "Enter the base URL for oppai.stream if it has changed",
+            key: "overrideBaseUrl",
+            editTextPreference: {
+                title: "Override BaseUrl",
+                summary: this.source.baseUrl,
+                value: this.source.baseUrl,
+                dialogTitle: "Override BaseUrl",
+                dialogMessage: "Enter the base URL for oppai.stream if it has changed",
             }
         }];
     }
@@ -284,3 +288,5 @@ class DefaultExtension extends MProvider {
         return [];
     }
 }
+
+var extension = new DefaultExtension();
