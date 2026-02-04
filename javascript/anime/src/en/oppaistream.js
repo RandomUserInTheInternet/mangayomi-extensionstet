@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.1.0",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": true,
@@ -143,12 +143,10 @@ class DefaultExtension extends MProvider {
         const url = `${this.baseUrl}/actions/search.php?order=${order}&page=${page}&limit=36&genres=&blacklist=&studio=&ibt=0&swa=1&text=${encodeURIComponent(query)}`;
         
         try {
-            console.log("Searching: " + url);
             const doc = await this.request(url);
             const list = [];
             
             const elements = doc.select("div.in-grid.episode-shown");
-            console.log("Found elements: " + elements.length);
             
             for (const element of elements) {
                 try {
@@ -182,6 +180,26 @@ class DefaultExtension extends MProvider {
         }
     }
 
+    getAnimeSlugFromUrl(url) {
+        try {
+            if (url.includes("?e=")) {
+                return url.split("?e=")[1].split("&")[0];
+            }
+        } catch (e) {}
+        return "";
+    }
+
+    getBaseAnimeName(slug) {
+        const parts = slug.split("-");
+        if (parts.length > 1) {
+            const lastPart = parts[parts.length - 1];
+            if (/^\d+$/.test(lastPart)) {
+                return parts.slice(0, -1).join("-");
+            }
+        }
+        return slug;
+    }
+
     async getDetail(url) {
         let fullUrl = url;
         if (!url.startsWith("http")) {
@@ -190,15 +208,18 @@ class DefaultExtension extends MProvider {
         
         try {
             console.log("Getting detail: " + fullUrl);
-            const doc = await this.request(fullUrl);
+            const html = await this.requestRaw(fullUrl);
+            const doc = new Document(html);
             
             const imageUrl = doc.selectFirst(".poster img")?.getSrc || 
                             doc.selectFirst("img.poster")?.getSrc ||
                             doc.selectFirst("meta[property='og:image']")?.attr("content") ||
+                            doc.selectFirst(".thumb img")?.getSrc ||
                             doc.selectFirst("img")?.getSrc || "";
             
             const title = doc.selectFirst("h1")?.text?.trim() || 
-                         doc.selectFirst(".title")?.text?.trim() || "";
+                         doc.selectFirst(".title")?.text?.trim() ||
+                         doc.selectFirst("meta[property='og:title']")?.attr("content") || "";
             
             const description = doc.selectFirst(".description")?.text?.trim() || 
                                doc.selectFirst(".synopsis")?.text?.trim() ||
@@ -211,50 +232,83 @@ class DefaultExtension extends MProvider {
                 if (g) genre.push(g);
             }
             
+            const currentSlug = this.getAnimeSlugFromUrl(fullUrl);
+            const baseAnimeName = this.getBaseAnimeName(currentSlug);
+            console.log("Current slug: " + currentSlug + ", Base name: " + baseAnimeName);
+            
             const chapters = [];
-            const episodeElements = doc.select("div.other-episodes div.in-grid.episode-shown, div.more-same-eps div.in-grid.episode-shown");
-            console.log("Found episodes: " + episodeElements.length);
+            
+            const episodeElements = doc.select("div.more-same-eps div.in-grid.episode-shown, div.other-episodes div.in-grid.episode-shown");
+            console.log("Found potential episodes: " + episodeElements.length);
             
             for (const element of episodeElements) {
                 try {
                     const linkElement = element.selectFirst("a");
                     let episodeUrl = linkElement?.attr("href") || linkElement?.getHref || "";
                     
+                    if (!episodeUrl) continue;
+                    
                     if (episodeUrl.includes("&for=episode-more")) {
                         episodeUrl = episodeUrl.replace("&for=episode-more", "");
                     }
                     
-                    const epNumber = element.selectFirst("h5 .ep, .ep")?.text?.trim() || "";
-                    const epTitle = element.selectFirst("h5 .title, .title")?.text?.trim() || "";
-                    
-                    let name = "";
-                    if (epNumber && epTitle) {
-                        name = `Episode ${epNumber}: ${epTitle}`;
-                    } else if (epNumber) {
-                        name = `Episode ${epNumber}`;
-                    } else if (epTitle) {
-                        name = epTitle;
-                    } else {
-                        name = element.selectFirst("h5")?.text?.trim() || "Episode";
+                    if (!episodeUrl.startsWith("http")) {
+                        episodeUrl = `${this.baseUrl}${episodeUrl}`;
                     }
                     
-                    if (episodeUrl) {
-                        chapters.push({ 
-                            name, 
-                            url: episodeUrl, 
-                            dateUpload: null
-                        });
-                        console.log("Added episode: " + name);
+                    const episodeSlug = this.getAnimeSlugFromUrl(episodeUrl);
+                    const episodeBaseName = this.getBaseAnimeName(episodeSlug);
+                    
+                    if (baseAnimeName && episodeBaseName && 
+                        episodeBaseName.toLowerCase() === baseAnimeName.toLowerCase()) {
+                        
+                        const epNumber = element.selectFirst("h5 .ep, .ep")?.text?.trim() || "";
+                        const epTitle = element.selectFirst("h5 .title, .title-ep")?.text?.trim() || "";
+                        
+                        let name = "";
+                        if (epNumber) {
+                            name = `Episode ${epNumber}`;
+                            if (epTitle) name += `: ${epTitle}`;
+                        } else if (epTitle) {
+                            name = epTitle;
+                        } else {
+                            const urlEpMatch = episodeSlug.match(/-(\d+)$/);
+                            if (urlEpMatch) {
+                                name = `Episode ${urlEpMatch[1]}`;
+                            } else {
+                                name = "Episode";
+                            }
+                        }
+                        
+                        if (!chapters.some(c => c.url === episodeUrl)) {
+                            chapters.push({ 
+                                name, 
+                                url: episodeUrl,
+                                dateUpload: null
+                            });
+                            console.log("Added episode: " + name + " -> " + episodeUrl);
+                        }
                     }
                 } catch (e) {
-                    console.log("Episode parse error: " + e);
                     continue;
                 }
             }
             
-            if (chapters.length === 0) {
-                chapters.push({ name: "Watch", url: fullUrl, dateUpload: null });
+            if (!chapters.some(c => c.url === fullUrl)) {
+                const currentEpMatch = currentSlug.match(/-(\d+)$/);
+                const epNum = currentEpMatch ? currentEpMatch[1] : "1";
+                chapters.unshift({ 
+                    name: `Episode ${epNum}`, 
+                    url: fullUrl,
+                    dateUpload: null 
+                });
             }
+            
+            chapters.sort((a, b) => {
+                const numA = parseInt(a.name.match(/\d+/)?.[0] || "0", 10);
+                const numB = parseInt(b.name.match(/\d+/)?.[0] || "0", 10);
+                return numA - numB;
+            });
             
             return {
                 title,
@@ -276,7 +330,7 @@ class DefaultExtension extends MProvider {
                 author: "",
                 artist: "",
                 status: 5,
-                chapters: [{ name: "Watch", url: fullUrl, dateUpload: null }]
+                chapters: [{ name: "Episode 1", url: fullUrl, dateUpload: null }]
             };
         }
     }
@@ -284,144 +338,144 @@ class DefaultExtension extends MProvider {
     async getVideoList(url) {
         let fullUrl = url;
         if (!url.startsWith("http")) {
-            fullUrl = `${this.baseUrl}${url}`;
+            if (url.startsWith("://")) {
+                fullUrl = "https" + url;
+            } else if (url.startsWith("/")) {
+                fullUrl = this.baseUrl + url;
+            } else {
+                fullUrl = this.baseUrl + "/" + url;
+            }
         }
         
+        console.log("Getting videos for: " + fullUrl);
+        
         try {
-            console.log("Getting videos for: " + fullUrl);
-            const html = await this.requestRaw(fullUrl);
+            const res = await this.client.get(fullUrl, this.getHeaders());
+            console.log("Response status: " + res.statusCode);
+            
+            if (res.statusCode !== 200) {
+                console.log("Failed to fetch page, status: " + res.statusCode);
+                return [];
+            }
+            
+            const html = res.body;
+            const doc = new Document(html);
             const videos = [];
             
-            const m3u8Regex = /https?:\/\/[^\s'"]+\.m3u8(?:\?[^\s'"]*)?/g;
-            const m3u8Matches = html.match(m3u8Regex) || [];
-            
-            for (const m3u8Url of m3u8Matches) {
-                if (!videos.some(v => v.url === m3u8Url)) {
-                    const qualityMatch = m3u8Url.match(/\/(\d{3,4})\//);
-                    const quality = qualityMatch ? `${qualityMatch[1]}p` : "Auto";
-                    
-                    videos.push({
-                        url: m3u8Url,
-                        originalUrl: m3u8Url,
-                        quality: `Oppai Stream - ${quality}`,
-                        headers: this.getHeaders()
-                    });
-                    console.log("Found m3u8: " + m3u8Url);
-                }
-            }
-            
-            const mp4Regex = /https?:\/\/[^\s'"]+\.mp4(?:\?[^\s'"]*)?/g;
-            const mp4Matches = html.match(mp4Regex) || [];
-            
-            for (const mp4Url of mp4Matches) {
-                if (!videos.some(v => v.url === mp4Url)) {
-                    const qualityMatch = mp4Url.match(/\/(\d{3,4})\//);
-                    const quality = qualityMatch ? `${qualityMatch[1]}p` : "Default";
-                    
-                    videos.push({
-                        url: mp4Url,
-                        originalUrl: mp4Url,
-                        quality: `Oppai Stream - ${quality}`,
-                        headers: this.getHeaders()
-                    });
-                    console.log("Found mp4: " + mp4Url);
-                }
-            }
-            
-            const doc = new Document(html);
             const iframes = doc.select("iframe[src]");
+            console.log("Found iframes: " + iframes.length);
             
             for (const iframe of iframes) {
-                const iframeSrc = iframe.attr("src") || iframe.getSrc;
-                if (iframeSrc && !iframeSrc.includes("ads")) {
-                    console.log("Found iframe: " + iframeSrc);
+                const iframeSrc = iframe.attr("src") || iframe.getSrc || "";
+                if (iframeSrc && !iframeSrc.includes("google") && !iframeSrc.includes("ads")) {
+                    console.log("Processing iframe: " + iframeSrc);
+                    
+                    let iframeFullUrl = iframeSrc;
+                    if (!iframeSrc.startsWith("http")) {
+                        if (iframeSrc.startsWith("//")) {
+                            iframeFullUrl = "https:" + iframeSrc;
+                        } else {
+                            iframeFullUrl = this.baseUrl + iframeSrc;
+                        }
+                    }
                     
                     try {
-                        const iframeHtml = await this.requestRaw(iframeSrc);
-                        
-                        if (iframeHtml.includes("eval(function(p,a,c,k,e,d)")) {
-                            console.log("Found packed JS, attempting to unpack...");
-                            const m3u8InPacked = iframeHtml.match(/https?:\\\/\\\/[^'"]+\.m3u8[^'""]*/g);
-                            const mp4InPacked = iframeHtml.match(/https?:\\\/\\\/[^'"]+\.mp4[^'""]*/g);
-                            
-                            if (m3u8InPacked) {
-                                for (let m3u8 of m3u8InPacked) {
-                                    m3u8 = m3u8.replace(/\\\//g, '/');
-                                    if (!videos.some(v => v.url === m3u8)) {
-                                        videos.push({
-                                            url: m3u8,
-                                            originalUrl: m3u8,
-                                            quality: "Oppai Stream - HLS",
-                                            headers: { "Referer": iframeSrc }
-                                        });
-                                    }
-                                }
-                            }
-                            
-                            if (mp4InPacked) {
-                                for (let mp4 of mp4InPacked) {
-                                    mp4 = mp4.replace(/\\\//g, '/');
-                                    if (!videos.some(v => v.url === mp4)) {
-                                        videos.push({
-                                            url: mp4,
-                                            originalUrl: mp4,
-                                            quality: "Oppai Stream - MP4",
-                                            headers: { "Referer": iframeSrc }
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        
-                        const iframeM3u8 = iframeHtml.match(m3u8Regex) || [];
-                        const iframeMp4 = iframeHtml.match(mp4Regex) || [];
-                        
-                        for (const videoUrl of [...iframeM3u8, ...iframeMp4]) {
-                            if (!videos.some(v => v.url === videoUrl)) {
-                                const isM3u8 = videoUrl.includes(".m3u8");
-                                videos.push({
-                                    url: videoUrl,
-                                    originalUrl: videoUrl,
-                                    quality: `Oppai Stream - ${isM3u8 ? "HLS" : "MP4"}`,
-                                    headers: { "Referer": iframeSrc }
-                                });
-                            }
-                        }
-                    } catch (iframeError) {
-                        console.log("Error fetching iframe: " + iframeError);
-                        videos.push({
-                            url: iframeSrc,
-                            originalUrl: iframeSrc,
-                            quality: "Embed",
-                            headers: this.getHeaders()
+                        const iframeRes = await this.client.get(iframeFullUrl, {
+                            "Referer": fullUrl,
+                            "User-Agent": this.getHeaders()["User-Agent"]
                         });
+                        
+                        if (iframeRes.statusCode === 200) {
+                            const iframeHtml = iframeRes.body;
+                            
+                            const m3u8Matches = iframeHtml.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/g) || [];
+                            for (const m3u8 of m3u8Matches) {
+                                if (!videos.some(v => v.url === m3u8)) {
+                                    const qualityMatch = m3u8.match(/\/(\d{3,4})\//);
+                                    videos.push({
+                                        url: m3u8,
+                                        originalUrl: m3u8,
+                                        quality: `Oppai Stream - ${qualityMatch ? qualityMatch[1] + 'p' : 'Auto'}`,
+                                        headers: { "Referer": iframeFullUrl }
+                                    });
+                                    console.log("Found m3u8: " + m3u8);
+                                }
+                            }
+                            
+                            const mp4Matches = iframeHtml.match(/https?:\/\/[^\s"']+\.mp4[^\s"']*/g) || [];
+                            for (const mp4 of mp4Matches) {
+                                if (!videos.some(v => v.url === mp4)) {
+                                    const qualityMatch = mp4.match(/\/(\d{3,4})\//);
+                                    videos.push({
+                                        url: mp4,
+                                        originalUrl: mp4,
+                                        quality: `Oppai Stream - ${qualityMatch ? qualityMatch[1] + 'p' : 'Default'}`,
+                                        headers: { "Referer": iframeFullUrl }
+                                    });
+                                    console.log("Found mp4: " + mp4);
+                                }
+                            }
+                            
+                            if (iframeHtml.includes("eval(function(p,a,c,k,e,d)")) {
+                                console.log("Found packed JS in iframe");
+                                const packedUrls = iframeHtml.match(/https?:\\\/\\\/[^"']+\.(?:m3u8|mp4)[^"']*/g) || [];
+                                for (let packedUrl of packedUrls) {
+                                    packedUrl = packedUrl.replace(/\\\//g, '/');
+                                    if (!videos.some(v => v.url === packedUrl)) {
+                                        videos.push({
+                                            url: packedUrl,
+                                            originalUrl: packedUrl,
+                                            quality: "Oppai Stream - Packed",
+                                            headers: { "Referer": iframeFullUrl }
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    } catch (iframeErr) {
+                        console.log("Iframe fetch error: " + iframeErr);
                     }
                 }
             }
             
-            const scripts = doc.select("script");
-            for (const script of scripts) {
-                const scriptText = script.text || "";
-                
-                const sourcePatterns = [
-                    /["']?(?:file|source|src|url)["']?\s*[=:]\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/gi,
-                    /sources\s*:\s*\[\s*\{\s*(?:file|src)\s*:\s*["']([^"']+)["']/gi,
-                ];
-                
-                for (const pattern of sourcePatterns) {
-                    let match;
-                    while ((match = pattern.exec(scriptText)) !== null) {
-                        const videoUrl = match[1];
-                        if (videoUrl && !videos.some(v => v.url === videoUrl)) {
-                            const isM3u8 = videoUrl.includes(".m3u8");
-                            videos.push({
-                                url: videoUrl,
-                                originalUrl: videoUrl,
-                                quality: `Oppai Stream - ${isM3u8 ? "HLS" : "MP4"}`,
-                                headers: this.getHeaders()
-                            });
-                        }
-                    }
+            const m3u8Regex = /https?:\/\/[^\s"']+\.m3u8[^\s"']*/g;
+            const mp4Regex = /https?:\/\/[^\s"']+\.mp4[^\s"']*/g;
+            
+            const m3u8Matches = html.match(m3u8Regex) || [];
+            const mp4Matches = html.match(mp4Regex) || [];
+            
+            for (const m3u8 of m3u8Matches) {
+                if (!videos.some(v => v.url === m3u8)) {
+                    videos.push({
+                        url: m3u8,
+                        originalUrl: m3u8,
+                        quality: "Oppai Stream - HLS",
+                        headers: this.getHeaders()
+                    });
+                }
+            }
+            
+            for (const mp4 of mp4Matches) {
+                if (!videos.some(v => v.url === mp4)) {
+                    videos.push({
+                        url: mp4,
+                        originalUrl: mp4,
+                        quality: "Oppai Stream - MP4",
+                        headers: this.getHeaders()
+                    });
+                }
+            }
+            
+            const videoElements = doc.select("video source[src], video[src]");
+            for (const video of videoElements) {
+                const src = video.attr("src") || "";
+                if (src && !videos.some(v => v.url === src)) {
+                    videos.push({
+                        url: src.startsWith("http") ? src : this.baseUrl + src,
+                        originalUrl: src,
+                        quality: "Oppai Stream - Direct",
+                        headers: this.getHeaders()
+                    });
                 }
             }
             
