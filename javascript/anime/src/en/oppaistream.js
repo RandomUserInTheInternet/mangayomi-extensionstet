@@ -1,5 +1,5 @@
 const mangayomiSources = [{
-    "name": "oppai.stream",
+    "name": "Oppai Stream",
     "lang": "en",
     "baseUrl": "https://oppai.stream",
     "apiUrl": "",
@@ -7,9 +7,10 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.1.1",
+    "version": "0.1.0",
     "dateFormat": "",
     "dateFormatLocale": "",
+    "isNsfw": true,
     "pkgPath": "anime/src/en/oppaistream.js"
 }];
 
@@ -17,258 +18,423 @@ class DefaultExtension extends MProvider {
     constructor() {
         super();
         this.client = new Client();
+        this.baseUrl = "https://oppai.stream";
     }
 
     getPreference(key) {
         return new SharedPreferences().get(key);
     }
 
-    getHeaders(url) {
+    getHeaders() {
         return {
-            "Referer": this.source.baseUrl,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "Referer": "https://oppai.stream/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.48 Safari/537.36"
         };
     }
 
-    async request(url, headers = {}) {
-        const finalHeaders = { ...this.getHeaders(url), ...headers };
-        const res = await this.client.get(url, finalHeaders);
+    async request(url) {
+        const res = await this.client.get(url, this.getHeaders());
         return new Document(res.body);
     }
 
-    parseAnimeList(doc) {
-        const list = [];
-        const animeElements = doc.select("div.item, article.post, div.post-item, div.anime-item");
-        
-        for (const element of animeElements) {
-            try {
-                const linkElement = element.selectFirst("a[href]");
-                if (!linkElement) continue;
-                
-                const link = linkElement.getHref;
-                const name = element.selectFirst("h2, h3, .title, .post-title")?.text.trim() ||
-                            linkElement.attr("title") || 
-                            linkElement.text.trim();
-                
-                let imageUrl = element.selectFirst("img")?.getSrc || 
-                              element.selectFirst("img")?.attr("data-src") || "";
-                
-                if (name && link) {
-                    list.push({ name, imageUrl, link });
-                }
-            } catch (e) {
-                // Skip malformed elements
-                continue;
-            }
-        }
-        
-        return list;
+    async requestRaw(url) {
+        const res = await this.client.get(url, this.getHeaders());
+        return res.body;
     }
 
     async getPopular(page) {
-        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
-        const url = `${baseUrl}/popular?page=${page}`;
+        const url = `${this.baseUrl}/actions/search.php?order=views&page=${page}&limit=36&genres=&blacklist=&studio=&ibt=0&swa=1&text=`;
         
         try {
+            console.log("Fetching: " + url);
             const doc = await this.request(url);
-            const list = this.parseAnimeList(doc);
-            const hasNextPage = doc.selectFirst("a.next, .pagination a:contains(Next), .next-page") != null;
+            const list = [];
+            
+            const elements = doc.select("div.in-grid.episode-shown");
+            console.log("Found elements: " + elements.length);
+            
+            for (const element of elements) {
+                try {
+                    const linkElement = element.selectFirst("a");
+                    let link = linkElement?.attr("href") || linkElement?.getHref || "";
+                    
+                    if (link.includes("&for=search")) {
+                        link = link.replace("&for=search", "");
+                    }
+                    
+                    const name = element.selectFirst(".title-ep")?.text?.trim() || 
+                                element.selectFirst("h5")?.text?.trim() || "";
+                    
+                    const imageUrl = element.selectFirst("img")?.getSrc || 
+                                    element.selectFirst("img")?.attr("src") ||
+                                    element.selectFirst("img")?.attr("data-src") || "";
+                    
+                    if (name && link) {
+                        list.push({ name, imageUrl, link });
+                        console.log("Added: " + name);
+                    }
+                } catch (e) {
+                    console.log("Element error: " + e);
+                    continue;
+                }
+            }
+            
+            const hasNextPage = list.length >= 36;
+            console.log("Total items: " + list.length);
             
             return { list, hasNextPage };
         } catch (e) {
+            console.log("getPopular error: " + e);
             return { list: [], hasNextPage: false };
         }
     }
 
     async getLatestUpdates(page) {
-        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
-        const url = `${baseUrl}/latest?page=${page}`;
+        const url = `${this.baseUrl}/actions/search.php?order=recent&page=${page}&limit=36&genres=&blacklist=&studio=&ibt=0&swa=1&text=`;
         
         try {
+            console.log("Fetching: " + url);
             const doc = await this.request(url);
-            const list = this.parseAnimeList(doc);
-            const hasNextPage = doc.selectFirst("a.next, .pagination a:contains(Next), .next-page") != null;
+            const list = [];
             
+            const elements = doc.select("div.in-grid.episode-shown");
+            console.log("Found elements: " + elements.length);
+            
+            for (const element of elements) {
+                try {
+                    const linkElement = element.selectFirst("a");
+                    let link = linkElement?.attr("href") || linkElement?.getHref || "";
+                    
+                    if (link.includes("&for=search")) {
+                        link = link.replace("&for=search", "");
+                    }
+                    
+                    const name = element.selectFirst(".title-ep")?.text?.trim() || 
+                                element.selectFirst("h5")?.text?.trim() || "";
+                    
+                    const imageUrl = element.selectFirst("img")?.getSrc || 
+                                    element.selectFirst("img")?.attr("src") ||
+                                    element.selectFirst("img")?.attr("data-src") || "";
+                    
+                    if (name && link) {
+                        list.push({ name, imageUrl, link });
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            
+            const hasNextPage = list.length >= 36;
             return { list, hasNextPage };
         } catch (e) {
+            console.log("getLatestUpdates error: " + e);
             return { list: [], hasNextPage: false };
         }
     }
 
     async search(query, page, filters) {
-        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
-        const url = `${baseUrl}/search?q=${encodeURIComponent(query)}&page=${page}`;
+        let order = "recent";
+        
+        if (filters && filters.length > 0 && filters[0].values) {
+            const selectedIndex = filters[0].state || 0;
+            order = filters[0].values[selectedIndex]?.value || "recent";
+        }
+        
+        const url = `${this.baseUrl}/actions/search.php?order=${order}&page=${page}&limit=36&genres=&blacklist=&studio=&ibt=0&swa=1&text=${encodeURIComponent(query)}`;
         
         try {
+            console.log("Searching: " + url);
             const doc = await this.request(url);
-            const list = this.parseAnimeList(doc);
-            const hasNextPage = doc.selectFirst("a.next, .pagination a:contains(Next), .next-page") != null;
+            const list = [];
             
+            const elements = doc.select("div.in-grid.episode-shown");
+            console.log("Found elements: " + elements.length);
+            
+            for (const element of elements) {
+                try {
+                    const linkElement = element.selectFirst("a");
+                    let link = linkElement?.attr("href") || linkElement?.getHref || "";
+                    
+                    if (link.includes("&for=search")) {
+                        link = link.replace("&for=search", "");
+                    }
+                    
+                    const name = element.selectFirst(".title-ep")?.text?.trim() || 
+                                element.selectFirst("h5")?.text?.trim() || "";
+                    
+                    const imageUrl = element.selectFirst("img")?.getSrc || 
+                                    element.selectFirst("img")?.attr("src") ||
+                                    element.selectFirst("img")?.attr("data-src") || "";
+                    
+                    if (name && link) {
+                        list.push({ name, imageUrl, link });
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            
+            const hasNextPage = list.length >= 36;
             return { list, hasNextPage };
         } catch (e) {
+            console.log("search error: " + e);
             return { list: [], hasNextPage: false };
         }
     }
 
-    toStatus(status) {
-        const statusLower = status.toLowerCase();
-        if (statusLower.includes("ongoing") || statusLower.includes("airing")) {
-            return 0;
-        } else if (statusLower.includes("complete") || statusLower.includes("finished")) {
-            return 1;
-        } else if (statusLower.includes("hiatus")) {
-            return 2;
-        } else if (statusLower.includes("cancel") || statusLower.includes("dropped")) {
-            return 3;
-        }
-        return 5; // unknown
-    }
-
-    parseDate(dateStr) {
-        try {
-            const date = new Date(dateStr);
-            if (!isNaN(date.valueOf())) {
-                return String(date.valueOf());
-            }
-        } catch (e) {
-            // Fallback to current date
-        }
-        return String(new Date().valueOf());
-    }
-
     async getDetail(url) {
-        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
-        const fullUrl = url.startsWith("http") ? url : `${baseUrl}${url}`;
-        
-        const doc = await this.request(fullUrl);
-        
-        // Extract anime details
-        const imageUrl = doc.selectFirst("img.poster, .anime-poster img, .cover img")?.getSrc || 
-                        doc.selectFirst("meta[property='og:image']")?.attr("content") || "";
-        
-        const description = doc.selectFirst(".description, .synopsis, .summary")?.text.trim() ||
-                           doc.selectFirst("meta[property='og:description']")?.attr("content") || "";
-        
-        const author = doc.selectFirst(".author, .studio")?.text.trim() || "";
-        const artist = doc.selectFirst(".producer, .director")?.text.trim() || "";
-        
-        const statusText = doc.selectFirst(".status")?.text.trim() || "";
-        const status = this.toStatus(statusText);
-        
-        // Extract genres
-        const genre = doc.select(".genre a, .genres a, .categories a").map(el => el.text.trim());
-        
-        // Extract episodes
-        const episodes = [];
-        const episodeElements = doc.select(".episode-item, .episode, .ep-item, .video-item");
-        
-        for (const element of episodeElements) {
-            try {
-                const linkElement = element.selectFirst("a[href]");
-                if (!linkElement) continue;
-                
-                const url = linkElement.getHref;
-                const name = element.selectFirst(".title, .episode-title")?.text.trim() ||
-                            linkElement.attr("title") ||
-                            linkElement.text.trim() ||
-                            "Episode";
-                
-                const dateText = element.selectFirst(".date, .time, .release-date")?.text.trim() || "";
-                const dateUpload = dateText ? this.parseDate(dateText) : null;
-                
-                episodes.push({ name, url, dateUpload });
-            } catch (e) {
-                continue;
-            }
+        let fullUrl = url;
+        if (!url.startsWith("http")) {
+            fullUrl = `${this.baseUrl}${url}`;
         }
         
-        return {
-            imageUrl,
-            description,
-            genre,
-            author,
-            artist,
-            status,
-            episodes
-        };
+        try {
+            console.log("Getting detail: " + fullUrl);
+            const doc = await this.request(fullUrl);
+            
+            const imageUrl = doc.selectFirst(".poster img")?.getSrc || 
+                            doc.selectFirst("img.poster")?.getSrc ||
+                            doc.selectFirst("meta[property='og:image']")?.attr("content") ||
+                            doc.selectFirst("img")?.getSrc || "";
+            
+            const title = doc.selectFirst("h1")?.text?.trim() || 
+                         doc.selectFirst(".title")?.text?.trim() || "";
+            
+            const description = doc.selectFirst(".description")?.text?.trim() || 
+                               doc.selectFirst(".synopsis")?.text?.trim() ||
+                               doc.selectFirst("meta[property='og:description']")?.attr("content") || "";
+            
+            const genreElements = doc.select(".genres a, .genre a, .tags a");
+            const genre = [];
+            for (const el of genreElements) {
+                const g = el.text?.trim();
+                if (g) genre.push(g);
+            }
+            
+            const chapters = [];
+            const episodeElements = doc.select("div.other-episodes div.in-grid.episode-shown, div.more-same-eps div.in-grid.episode-shown");
+            console.log("Found episodes: " + episodeElements.length);
+            
+            for (const element of episodeElements) {
+                try {
+                    const linkElement = element.selectFirst("a");
+                    let episodeUrl = linkElement?.attr("href") || linkElement?.getHref || "";
+                    
+                    if (episodeUrl.includes("&for=episode-more")) {
+                        episodeUrl = episodeUrl.replace("&for=episode-more", "");
+                    }
+                    
+                    const epNumber = element.selectFirst("h5 .ep, .ep")?.text?.trim() || "";
+                    const epTitle = element.selectFirst("h5 .title, .title")?.text?.trim() || "";
+                    
+                    let name = "";
+                    if (epNumber && epTitle) {
+                        name = `Episode ${epNumber}: ${epTitle}`;
+                    } else if (epNumber) {
+                        name = `Episode ${epNumber}`;
+                    } else if (epTitle) {
+                        name = epTitle;
+                    } else {
+                        name = element.selectFirst("h5")?.text?.trim() || "Episode";
+                    }
+                    
+                    if (episodeUrl) {
+                        chapters.push({ 
+                            name, 
+                            url: episodeUrl, 
+                            dateUpload: null
+                        });
+                        console.log("Added episode: " + name);
+                    }
+                } catch (e) {
+                    console.log("Episode parse error: " + e);
+                    continue;
+                }
+            }
+            
+            if (chapters.length === 0) {
+                chapters.push({ name: "Watch", url: fullUrl, dateUpload: null });
+            }
+            
+            return {
+                title,
+                imageUrl,
+                description,
+                genre,
+                author: "",
+                artist: "",
+                status: 5,
+                chapters
+            };
+        } catch (e) {
+            console.log("getDetail error: " + e);
+            return {
+                title: "",
+                imageUrl: "",
+                description: "",
+                genre: [],
+                author: "",
+                artist: "",
+                status: 5,
+                chapters: [{ name: "Watch", url: fullUrl, dateUpload: null }]
+            };
+        }
     }
 
     async getVideoList(url) {
-        const baseUrl = this.getPreference("overrideBaseUrl") || this.source.baseUrl;
-        const fullUrl = url.startsWith("http") ? url : `${baseUrl}${url}`;
-        
-        const doc = await this.request(fullUrl);
-        const videos = [];
-        
-        // Try to find video sources
-        // Method 1: Direct video elements
-        const videoElements = doc.select("video source, video");
-        for (const element of videoElements) {
-            const videoUrl = element.attr("src") || element.attr("data-src");
-            if (videoUrl) {
-                videos.push({
-                    url: videoUrl,
-                    originalUrl: videoUrl,
-                    quality: element.attr("quality") || element.attr("label") || "default"
-                });
-            }
+        let fullUrl = url;
+        if (!url.startsWith("http")) {
+            fullUrl = `${this.baseUrl}${url}`;
         }
         
-        // Method 2: iframe embeds
-        if (videos.length === 0) {
-            const iframes = doc.select("iframe[src]");
-            for (const iframe of iframes) {
-                const iframeUrl = iframe.getSrc;
-                if (iframeUrl) {
+        try {
+            console.log("Getting videos for: " + fullUrl);
+            const html = await this.requestRaw(fullUrl);
+            const videos = [];
+            
+            const m3u8Regex = /https?:\/\/[^\s'"]+\.m3u8(?:\?[^\s'"]*)?/g;
+            const m3u8Matches = html.match(m3u8Regex) || [];
+            
+            for (const m3u8Url of m3u8Matches) {
+                if (!videos.some(v => v.url === m3u8Url)) {
+                    const qualityMatch = m3u8Url.match(/\/(\d{3,4})\//);
+                    const quality = qualityMatch ? `${qualityMatch[1]}p` : "Auto";
+                    
                     videos.push({
-                        url: iframeUrl,
-                        originalUrl: iframeUrl,
-                        quality: "iframe"
+                        url: m3u8Url,
+                        originalUrl: m3u8Url,
+                        quality: `Oppai Stream - ${quality}`,
+                        headers: this.getHeaders()
                     });
+                    console.log("Found m3u8: " + m3u8Url);
                 }
             }
-        }
-        
-        // Method 3: Try to extract from script tags
-        if (videos.length === 0) {
+            
+            const mp4Regex = /https?:\/\/[^\s'"]+\.mp4(?:\?[^\s'"]*)?/g;
+            const mp4Matches = html.match(mp4Regex) || [];
+            
+            for (const mp4Url of mp4Matches) {
+                if (!videos.some(v => v.url === mp4Url)) {
+                    const qualityMatch = mp4Url.match(/\/(\d{3,4})\//);
+                    const quality = qualityMatch ? `${qualityMatch[1]}p` : "Default";
+                    
+                    videos.push({
+                        url: mp4Url,
+                        originalUrl: mp4Url,
+                        quality: `Oppai Stream - ${quality}`,
+                        headers: this.getHeaders()
+                    });
+                    console.log("Found mp4: " + mp4Url);
+                }
+            }
+            
+            const doc = new Document(html);
+            const iframes = doc.select("iframe[src]");
+            
+            for (const iframe of iframes) {
+                const iframeSrc = iframe.attr("src") || iframe.getSrc;
+                if (iframeSrc && !iframeSrc.includes("ads")) {
+                    console.log("Found iframe: " + iframeSrc);
+                    
+                    try {
+                        const iframeHtml = await this.requestRaw(iframeSrc);
+                        
+                        if (iframeHtml.includes("eval(function(p,a,c,k,e,d)")) {
+                            console.log("Found packed JS, attempting to unpack...");
+                            const m3u8InPacked = iframeHtml.match(/https?:\\\/\\\/[^'"]+\.m3u8[^'""]*/g);
+                            const mp4InPacked = iframeHtml.match(/https?:\\\/\\\/[^'"]+\.mp4[^'""]*/g);
+                            
+                            if (m3u8InPacked) {
+                                for (let m3u8 of m3u8InPacked) {
+                                    m3u8 = m3u8.replace(/\\\//g, '/');
+                                    if (!videos.some(v => v.url === m3u8)) {
+                                        videos.push({
+                                            url: m3u8,
+                                            originalUrl: m3u8,
+                                            quality: "Oppai Stream - HLS",
+                                            headers: { "Referer": iframeSrc }
+                                        });
+                                    }
+                                }
+                            }
+                            
+                            if (mp4InPacked) {
+                                for (let mp4 of mp4InPacked) {
+                                    mp4 = mp4.replace(/\\\//g, '/');
+                                    if (!videos.some(v => v.url === mp4)) {
+                                        videos.push({
+                                            url: mp4,
+                                            originalUrl: mp4,
+                                            quality: "Oppai Stream - MP4",
+                                            headers: { "Referer": iframeSrc }
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        
+                        const iframeM3u8 = iframeHtml.match(m3u8Regex) || [];
+                        const iframeMp4 = iframeHtml.match(mp4Regex) || [];
+                        
+                        for (const videoUrl of [...iframeM3u8, ...iframeMp4]) {
+                            if (!videos.some(v => v.url === videoUrl)) {
+                                const isM3u8 = videoUrl.includes(".m3u8");
+                                videos.push({
+                                    url: videoUrl,
+                                    originalUrl: videoUrl,
+                                    quality: `Oppai Stream - ${isM3u8 ? "HLS" : "MP4"}`,
+                                    headers: { "Referer": iframeSrc }
+                                });
+                            }
+                        }
+                    } catch (iframeError) {
+                        console.log("Error fetching iframe: " + iframeError);
+                        videos.push({
+                            url: iframeSrc,
+                            originalUrl: iframeSrc,
+                            quality: "Embed",
+                            headers: this.getHeaders()
+                        });
+                    }
+                }
+            }
+            
             const scripts = doc.select("script");
             for (const script of scripts) {
-                const scriptText = script.text;
+                const scriptText = script.text || "";
                 
-                // Look for common video URL patterns
-                const urlPatterns = [
-                    /["'](?:url|file|src)["']\s*:\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/gi,
-                    /source\s*=\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/gi,
+                const sourcePatterns = [
+                    /["']?(?:file|source|src|url)["']?\s*[=:]\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/gi,
+                    /sources\s*:\s*\[\s*\{\s*(?:file|src)\s*:\s*["']([^"']+)["']/gi,
                 ];
                 
-                for (const pattern of urlPatterns) {
+                for (const pattern of sourcePatterns) {
                     let match;
                     while ((match = pattern.exec(scriptText)) !== null) {
                         const videoUrl = match[1];
                         if (videoUrl && !videos.some(v => v.url === videoUrl)) {
+                            const isM3u8 = videoUrl.includes(".m3u8");
                             videos.push({
                                 url: videoUrl,
                                 originalUrl: videoUrl,
-                                quality: videoUrl.includes("1080") ? "1080p" : 
-                                        videoUrl.includes("720") ? "720p" :
-                                        videoUrl.includes("480") ? "480p" : "default"
+                                quality: `Oppai Stream - ${isM3u8 ? "HLS" : "MP4"}`,
+                                headers: this.getHeaders()
                             });
                         }
                     }
                 }
             }
+            
+            console.log("Total videos found: " + videos.length);
+            return videos;
+        } catch (e) {
+            console.log("getVideoList error: " + e);
+            return [];
         }
-        
-        // If no videos found, return a placeholder
-        if (videos.length === 0) {
-            videos.push({
-                url: fullUrl,
-                originalUrl: fullUrl,
-                quality: "default"
-            });
-        }
-        
-        return videos;
+    }
+
+    async getPageList(url) {
+        return [];
     }
 
     getSourcePreferences() {
@@ -276,16 +442,29 @@ class DefaultExtension extends MProvider {
             key: "overrideBaseUrl",
             editTextPreference: {
                 title: "Override BaseUrl",
-                summary: this.source.baseUrl,
-                value: this.source.baseUrl,
+                summary: "Enter the base URL if it has changed",
+                value: "https://oppai.stream",
                 dialogTitle: "Override BaseUrl",
-                dialogMessage: "Enter the base URL for oppai.stream if it has changed",
+                dialogMessage: "Enter the base URL if it has changed",
             }
         }];
     }
 
     getFilterList() {
-        return [];
+        return [
+            {
+                type_name: "SelectFilter",
+                name: "Sort By",
+                state: 0,
+                values: [
+                    { type_name: "SelectOption", name: "Recent", value: "recent" },
+                    { type_name: "SelectOption", name: "Most Views", value: "views" },
+                    { type_name: "SelectOption", name: "Top Rated", value: "rating" },
+                    { type_name: "SelectOption", name: "A-Z", value: "az" },
+                    { type_name: "SelectOption", name: "Z-A", value: "za" },
+                ]
+            }
+        ];
     }
 }
 
