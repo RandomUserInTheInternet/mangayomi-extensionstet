@@ -10,6 +10,9 @@ void main() {
   genManga(
     jsSources.where((element) => element.itemType!.name == "manga").toList(),
   );
+  genAnime(
+    jsSources.where((element) => element.itemType!.name == "anime").toList(),
+  );
   genNovel(
     jsSources.where((element) => element.itemType!.name == "novel").toList(),
   );
@@ -40,6 +43,20 @@ void genNovel(List<Source> jsNovelSourceList) {
   final jsonString = jsonEncode(jsonList);
 
   final file = File('novel_index.json');
+  file.writeAsStringSync(jsonString);
+
+  log('JSON file created: ${file.path}');
+}
+
+void genAnime(List<Source> jsAnimeSourceList) {
+  List<Source> animeSources = [];
+  animeSources.addAll(jsAnimeSourceList);
+  final List<Map<String, dynamic>> jsonList = animeSources
+      .map((source) => source.toJson())
+      .toList();
+  final jsonString = jsonEncode(jsonList);
+
+  final file = File('anime_index.json');
   file.writeAsStringSync(jsonString);
 
   log('JSON file created: ${file.path}');
