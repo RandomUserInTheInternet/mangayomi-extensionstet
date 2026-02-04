@@ -36,9 +36,48 @@ Click to add the repository directly:
 - ✅ Stream videos (m3u8/mp4)
 - ✅ Sort by: Recent, Views, Rating, A-Z
 
+## Extension Development
+
+Want to create your own extension? We provide templates and comprehensive guides!
+
+### Templates
+
+- **[Anime Extension Template](templates/extension-template-anime.js)** - Complete template with detailed comments for creating anime/video streaming extensions
+- **[Extension Development Guide](templates/EXTENSION-GUIDE.md)** - Comprehensive guide covering all aspects of extension development
+
+### Quick Start
+
+1. Copy the template file that matches your needs
+2. Follow the step-by-step guide in EXTENSION-GUIDE.md
+3. Use Mangayomi's built-in editor to test your extension
+4. Submit a pull request when ready!
+
+### What's Included
+
+The template provides:
+- ✅ Complete extension structure with metadata configuration
+- ✅ All required methods with detailed comments
+- ✅ Helper functions for common tasks
+- ✅ Video extraction patterns (iframes, direct URLs, packed JS)
+- ✅ Error handling and logging examples
+- ✅ CSS selector examples
+
+The guide covers:
+- 📚 Extension structure explanation
+- 📚 Required methods and their usage
+- 📚 Common CSS selectors and patterns
+- 📚 Video extraction techniques
+- 📚 Troubleshooting common issues
+- 📚 Testing workflow
+- 📚 Best practices and tips
+
+### Additional Resources
+
+See [CONTRIBUTING-JS.md](CONTRIBUTING-JS.md) for more technical details about JavaScript extensions.
+
 ## Contributing
 
-Feel free to contribute by opening issues or pull requests.
+Feel free to contribute by opening issues or pull requests. Use our templates and guides to create new extensions!
 
 ## Disclaimer
 
