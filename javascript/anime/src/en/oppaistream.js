@@ -305,8 +305,8 @@ class DefaultExtension extends MProvider {
             }
             
             chapters.sort((a, b) => {
-                const numA = parseInt(a.name.match(/\d+/)?.[0] || "0");
-                const numB = parseInt(b.name.match(/\d+/)?.[0] || "0");
+                const numA = parseInt(a.name.match(/\d+/)?.[0] || "0", 10);
+                const numB = parseInt(b.name.match(/\d+/)?.[0] || "0", 10);
                 return numA - numB;
             });
             
