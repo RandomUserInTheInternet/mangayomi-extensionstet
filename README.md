@@ -7,7 +7,7 @@ Custom extension repository for the Mangayomi app.
 ### Anime
 | Name | Language | Version | Description |
 |------|----------|---------|-------------|
-| Oppai Stream | English | 0.1.0 | Anime streaming source (18+/NSFW) |
+|  Stream | English | 0.1.0 | Anime streaming source |
 
 ## How to Install
 
