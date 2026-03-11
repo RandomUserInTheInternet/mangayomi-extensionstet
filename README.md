@@ -1,5 +1,9 @@
 # Mangayomi Extensions
 
+> [!CAUTION]
+> ## WARNING: NOT WORKING ANYMORE
+> This project is no longer maintained and the code is currently broken.
+
 Custom extension repository for the Mangayomi app.
 
 ## Available Extensions
