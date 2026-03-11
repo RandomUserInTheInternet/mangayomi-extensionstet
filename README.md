@@ -5,9 +5,10 @@ Custom extension repository for the Mangayomi app.
 ## Available Extensions
 
 ### Anime
-| Name | Language | Version | Description |
-|------|----------|---------|-------------|
-|  Stream | English | 0.1.0 | Anime streaming source |
+| Name | Language | Version | NSFW | Description |
+|------|----------|---------|------|-------------|
+| Oppai Stream | English | 0.1.2 | ✅ | Anime streaming source |
+| HahoMoe | English | 0.0.2 | ✅ | Anime streaming from haho.moe with multi-quality MP4 support |
 
 ## How to Install
 
@@ -29,12 +30,24 @@ Click to add the repository directly:
 
 ## Features
 
+### All Extensions
 - ✅ Browse popular anime
 - ✅ Browse latest updates
 - ✅ Search anime
 - ✅ View anime details and episodes
 - ✅ Stream videos (m3u8/mp4)
+
+### HahoMoe Extension
+- ✅ Multi-quality video sources (360p, 480p, 720p, 1080p)
+- ✅ Multiple server support via embed player
+- ✅ Episode list with pagination support
+- ✅ Anime metadata (genres, status, description)
+- ✅ Direct MP4 streaming from filegasm CDN
+
+### Oppai Stream Extension
 - ✅ Sort by: Recent, Views, Rating, A-Z
+- ✅ Iframe and direct video extraction
+- ✅ Packed JS video URL decoding
 
 ## Extension Development
 
@@ -86,3 +99,4 @@ This extension is for educational purposes only. The developer does not host any
 ## License
 
 This project is licensed under the Apache License 2.0.
+
