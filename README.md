@@ -4,11 +4,6 @@ Custom extension repository for the Mangayomi app.
 
 ## Available Extensions
 
-### Anime
-| Name | Language | Version | NSFW | Description |
-|------|----------|---------|------|-------------|
-| Oppai Stream | English | 0.1.2 | ✅ | Anime streaming source |
-| HahoMoe | English | 0.0.2 | ✅ | Anime streaming from haho.moe with multi-quality MP4 support |
 
 ## How to Install
 
