@@ -1,35 +1,14 @@
+> [!CAUTION]
+> ## WARNING: NOT WORKING ANYMORE
+> This project is no longer maintained and the code is currently broken.
+> 
 # Mangayomi Extensions
 
 Custom extension repository for the Mangayomi app.
 
-## Available Extensions
-
-### Anime
-| Name | Language | Version | Description |
-|------|----------|---------|-------------|
-| AllManga | English | 0.0.2 | Anime streaming with multi-server + sub/dub support |
-| HahoMoe | English | 0.0.2 | Anime streaming source |
-| Oppai Stream | English | 0.1.2 | Anime streaming source |
-
-<details>
-<summary>🔞 NSFW Extensions (click to expand)</summary>
-
-| Name | Language | Version | Description |
-|------|----------|---------|-------------|
-| AnimeidHentai | English | 0.0.1 | 18+ anime streaming |
-| HentaiHaven | English | 0.0.1 | 18+ anime streaming |
-
-> ⚠️ These extensions contain adult content. Enable NSFW sources in Mangayomi settings to use them.
-
 </details>
 
-## How to Install
 
-### Option 1: Add Repository URL
-
-Add the anime repository manually in the Mangayomi app:
-
-**Settings → Browse → Add Repository**
 
 ```
 https://raw.githubusercontent.com/RandomUserInTheInternet/mangayomi-extensionstet/main/anime_index.json
