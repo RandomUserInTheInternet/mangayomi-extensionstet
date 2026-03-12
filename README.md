@@ -1,13 +1,27 @@
 # Mangayomi Extensions
 
-> [!CAUTION]
-> ## WARNING: NOT WORKING ANYMORE
-> This project is no longer maintained and the code is currently broken.
-
 Custom extension repository for the Mangayomi app.
 
 ## Available Extensions
 
+### Anime
+| Name | Language | Version | Description |
+|------|----------|---------|-------------|
+| AllManga | English | 0.0.2 | Anime streaming with multi-server + sub/dub support |
+| HahoMoe | English | 0.0.2 | Anime streaming source |
+| Oppai Stream | English | 0.1.2 | Anime streaming source |
+
+<details>
+<summary>🔞 NSFW Extensions (click to expand)</summary>
+
+| Name | Language | Version | Description |
+|------|----------|---------|-------------|
+| AnimeidHentai | English | 0.0.1 | 18+ anime streaming |
+| HentaiHaven | English | 0.0.1 | 18+ anime streaming |
+
+> ⚠️ These extensions contain adult content. Enable NSFW sources in Mangayomi settings to use them.
+
+</details>
 
 ## How to Install
 
@@ -29,24 +43,14 @@ Click to add the repository directly:
 
 ## Features
 
-### All Extensions
 - ✅ Browse popular anime
 - ✅ Browse latest updates
 - ✅ Search anime
 - ✅ View anime details and episodes
 - ✅ Stream videos (m3u8/mp4)
-
-### HahoMoe Extension
-- ✅ Multi-quality video sources (360p, 480p, 720p, 1080p)
-- ✅ Multiple server support via embed player
-- ✅ Episode list with pagination support
-- ✅ Anime metadata (genres, status, description)
-- ✅ Direct MP4 streaming from filegasm CDN
-
-### Oppai Stream Extension
 - ✅ Sort by: Recent, Views, Rating, A-Z
-- ✅ Iframe and direct video extraction
-- ✅ Packed JS video URL decoding
+- ✅ Multi-server support
+- ✅ Sub/Dub selection
 
 ## Extension Development
 
@@ -63,25 +67,6 @@ Want to create your own extension? We provide templates and comprehensive guides
 2. Follow the step-by-step guide in EXTENSION-GUIDE.md
 3. Use Mangayomi's built-in editor to test your extension
 4. Submit a pull request when ready!
-
-### What's Included
-
-The template provides:
-- ✅ Complete extension structure with metadata configuration
-- ✅ All required methods with detailed comments
-- ✅ Helper functions for common tasks
-- ✅ Video extraction patterns (iframes, direct URLs, packed JS)
-- ✅ Error handling and logging examples
-- ✅ CSS selector examples
-
-The guide covers:
-- 📚 Extension structure explanation
-- 📚 Required methods and their usage
-- 📚 Common CSS selectors and patterns
-- 📚 Video extraction techniques
-- 📚 Troubleshooting common issues
-- 📚 Testing workflow
-- 📚 Best practices and tips
 
 ### Additional Resources
 
