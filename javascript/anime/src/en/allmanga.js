@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.0.2",
+    "version": "0.0.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": false,
@@ -60,6 +60,25 @@ class DefaultExtension extends MProvider {
             return prefs.getString("stream_type", "sub");
         } catch (e) {
             return "sub";
+        }
+    }
+
+    getPreferredServer() {
+        try {
+            var prefs = new SharedPreferences();
+            return prefs.getString("preferred_server", "yt-mp4");
+        } catch (e) {
+            return "yt-mp4";
+        }
+    }
+
+    // New: Fetches preferred quality setting
+    getPreferredQuality() {
+        try {
+            var prefs = new SharedPreferences();
+            return prefs.getString("preferred_quality", "1080");
+        } catch (e) {
+            return "1080";
         }
     }
 
@@ -247,6 +266,41 @@ class DefaultExtension extends MProvider {
         return "";
     }
 
+    // Updated: Sorts videos by preferred server, then by preferred quality, then by resolution descending
+    sortVideos(videos) {
+        var prefServer = this.getPreferredServer().toLowerCase();
+        var prefQuality = this.getPreferredQuality();
+        
+        videos.sort((a, b) => {
+            // 1. Prioritize Preferred Server
+            var aServerMatch = a.quality.toLowerCase().includes(prefServer) ? 1 : 0;
+            var bServerMatch = b.quality.toLowerCase().includes(prefServer) ? 1 : 0;
+            
+            if (aServerMatch !== bServerMatch) {
+                return bServerMatch - aServerMatch; 
+            }
+
+            // 2. Prioritize Preferred Quality (if servers match)
+            var aQualityMatch = a.quality.includes(prefQuality) ? 1 : 0;
+            var bQualityMatch = b.quality.includes(prefQuality) ? 1 : 0;
+
+            if (aQualityMatch !== bQualityMatch) {
+                return bQualityMatch - aQualityMatch;
+            }
+
+            // 3. Fallback: Sort by raw resolution number descending
+            var regex = /(\d+)p/;
+            var matchA = a.quality.match(regex);
+            var matchB = b.quality.match(regex);
+            var numA = matchA ? parseInt(matchA[1]) : 0;
+            var numB = matchB ? parseInt(matchB[1]) : 0;
+
+            return numB - numA;
+        });
+        
+        return videos;
+    }
+
     async getVideoList(url) {
         console.log("AllManga getVideoList: " + url);
         try {
@@ -320,7 +374,9 @@ class DefaultExtension extends MProvider {
             }
 
             console.log("Total videos: " + videos.length);
-            return videos;
+            
+            return this.sortVideos(videos);
+            
         } catch (e) {
             console.log("getVideoList error: " + e);
             return [];
@@ -335,23 +391,48 @@ class DefaultExtension extends MProvider {
         return [];
     }
 
+    // Updated: Added Preferred Quality to the list preference settings
     getSourcePreferences() {
         return [
             {
                 key: "title_lang",
-                title: "Title Language",
-                type: "ListPreference",
-                defaultValue: "english",
-                values: ["english", "romaji", "native"],
-                summary: "Preferred title language"
+                listPreference: {
+                    title: "Title Language",
+                    summary: "Preferred title language",
+                    valueIndex: 0,
+                    entries: ["English", "Romaji", "Native"],
+                    entryValues: ["english", "romaji", "native"]
+                }
             },
             {
                 key: "stream_type",
-                title: "Stream Type",
-                type: "ListPreference",
-                defaultValue: "sub",
-                values: ["sub", "dub"],
-                summary: "Preferred stream type (Sub or Dub)"
+                listPreference: {
+                    title: "Stream Type",
+                    summary: "Preferred stream type (Sub or Dub)",
+                    valueIndex: 0,
+                    entries: ["Sub", "Dub"],
+                    entryValues: ["sub", "dub"]
+                }
+            },
+            {
+                key: "preferred_server",
+                listPreference: {
+                    title: "Preferred Server",
+                    summary: "Select your preferred server",
+                    valueIndex: 0,
+                    entries: ["Yt-mp4", "Luf-mp4", "Vidstreaming", "Ok.ru"],
+                    entryValues: ["yt-mp4", "luf-mp4", "vidstreaming", "ok.ru"]
+                }
+            },
+            {
+                key: "preferred_quality",
+                listPreference: {
+                    title: "Preferred Quality",
+                    summary: "Select your preferred video resolution",
+                    valueIndex: 0, // Default to 1080p
+                    entries: ["1080p", "720p", "480p", "360p"],
+                    entryValues: ["1080", "720", "480", "360"]
+                }
             }
         ];
     }
