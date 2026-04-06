@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.1.4",
+    "version": "0.1.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": true,
@@ -341,16 +341,33 @@ class DefaultExtension extends MProvider {
     // Pattern: https://myspacecat.pictures/{Anime}/{Quality}/E{N}.mp4
     //      →   https://myspacecat.pictures/{Anime}/{Quality}/E{N}_SUB_1.vtt?v=1
     buildSubtitleUrl(videoUrl) {
+        if (!videoUrl.includes("myspacecat.pictures")) return null;
         try {
-            // Works for both .mp4 and .m3u8 URLs hosted on myspacecat.pictures
-            const mp4Match = videoUrl.match(/^(https?:\/\/[^/]*myspacecat[^?#]+?)(?:\.mp4|\.m3u8).*$/);
-            if (mp4Match) {
-                return mp4Match[1] + "_SUB_1.vtt?v=1";
+            // First, strip query params and trailing slashes
+            let cleanUrl = videoUrl.split('?')[0].split('#')[0];
+            if (cleanUrl.endsWith('/')) cleanUrl = cleanUrl.slice(0, -1);
+
+            // 1. Handle folders like E01_dash or E01_hls
+            // Example: .../1080/E01_dash/index.m3u8 -> .../1080/E01_SUB_1.vtt
+            const folderMatch = cleanUrl.match(/^(https?:\/\/.+?\/E\d+)(?:_dash|_hls).*/);
+            if (folderMatch) {
+                return folderMatch[1] + "_SUB_1.vtt?v=1";
             }
-            // Generic fallback: strip extension and append _SUB_1.vtt
-            const extMatch = videoUrl.match(/^(https?:\/\/.+?)\.[a-z0-9]{2,5}(\?.*)?$/);
-            if (extMatch) {
-                return extMatch[1] + "_SUB_1.vtt?v=1";
+
+            // 2. Handle direct files like E01.mp4 or E01.m3u8
+            // Example: .../1080/E01.mp4 -> .../1080/E01_SUB_1.vtt
+            const fileMatch = cleanUrl.match(/^(https?:\/\/.+?\/E\d+)(?:\.mp4|\.m3u8|\.mpd)$/);
+            if (fileMatch) {
+                return fileMatch[1] + "_SUB_1.vtt?v=1";
+            }
+            
+            // 3. Generic fallback: strip extension and append _SUB_1.vtt
+            // Only if it looks like a myspacecat URL with an episode number
+            if (cleanUrl.match(/\/E\d+/)) {
+                const genericMatch = cleanUrl.match(/^(https?:\/\/.+?)\.[a-z0-9]{2,5}$/);
+                if (genericMatch) {
+                    return genericMatch[1] + "_SUB_1.vtt?v=1";
+                }
             }
         } catch (e) {
             console.log("buildSubtitleUrl error: " + e);
@@ -364,7 +381,7 @@ class DefaultExtension extends MProvider {
                 "Referer": this.baseUrl + "/",
                 "User-Agent": this.getHeaders()["User-Agent"]
             });
-            if (res.statusCode === 200 && (res.body || "").includes("WEBVTT")) {
+            if (res.statusCode === 200 && (res.body || "").toUpperCase().includes("WEBVTT")) {
                 console.log("Subtitle confirmed: " + subtitleUrl);
                 return subtitleUrl;
             }
@@ -529,7 +546,7 @@ class DefaultExtension extends MProvider {
             // Attach subtitles when the setting is enabled
             // Oppai.stream subtitle URL = video base URL + _SUB_1.vtt?v=1
             const loadSubs = new SharedPreferences().get("load_subtitles");
-            const wantSubs = (loadSubs === true || loadSubs === "true");
+            const wantSubs = (loadSubs === undefined || loadSubs === true || loadSubs === "true");
             if (wantSubs) {
                 console.log("Loading subtitles for " + videos.length + " videos");
                 for (const video of videos) {
