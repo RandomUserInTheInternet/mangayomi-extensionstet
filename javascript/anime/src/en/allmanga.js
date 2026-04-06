@@ -2,7 +2,7 @@ const mangayomiSources = [{
     "name": "AllManga",
     "lang": "en",
     "baseUrl": "https://allmanga.to",
-    "apiUrl": "https://api.allanime.co/api",
+    "apiUrl": "https://api.allanime.day/api",
     "iconUrl": "https://www.google.com/s2/favicons?sz=128&domain=allmanga.to",
     "typeSource": "single",
     "isManga": false,
@@ -26,7 +26,7 @@ class DefaultExtension extends MProvider {
     constructor() {
         super();
         this.client = new Client();
-        this.apiUrl = "https://api.allanime.co/api";
+        this.apiUrl = "https://api.allanime.day/api";
         this.baseUrl = "https://allmanga.to";
         this.thumbnailPrefix = "https://wp.youtube-anime.com/aln.youtube-anime.com/";
     }
@@ -252,7 +252,7 @@ class DefaultExtension extends MProvider {
 
     async resolveInternalUrl(path) {
         try {
-            var clockUrl = "https://allanime.co" + path;
+            var clockUrl = "https://allanime.to" + path;
             var res = await this.client.get(clockUrl, this.getHeaders());
             if (res.statusCode === 200) {
                 var data = JSON.parse(res.body);
@@ -336,8 +336,9 @@ class DefaultExtension extends MProvider {
 
                     var resolvedUrl = rawUrl;
 
-                    if (rawUrl.startsWith("--")) {
-                        resolvedUrl = this.xorDecode(rawUrl.substring(2));
+                    if (rawUrl.startsWith("-")) {
+                        var encoded = rawUrl.substring(rawUrl.lastIndexOf("-") + 1);
+                        resolvedUrl = this.xorDecode(encoded);
                     } else if (rawUrl.startsWith("/")) {
                         resolvedUrl = await this.resolveInternalUrl(rawUrl);
                     }
