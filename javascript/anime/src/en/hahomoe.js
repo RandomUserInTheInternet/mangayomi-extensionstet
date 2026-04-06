@@ -7,17 +7,18 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.0.2",
+    "version": "0.0.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": true,
     "hasCloudflare": false,
-    "sourceCodeUrl": "",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/RandomUserInTheInternet/mangayomi-extensionstet/main/javascript/anime/src/en/hahomoe.js",
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "",
+    "id": 912847365,
+    "notes": "HahoMoe NSFW anime streaming",
     "pkgPath": "anime/src/en/hahomoe.js"
 }];
 
@@ -357,7 +358,47 @@ class DefaultExtension extends MProvider {
 
                         if (iframeRes.statusCode === 200) {
                             var iframeDoc = new Document(iframeRes.body);
+                            var iframeHtml = iframeRes.body;
 
+                            // ── Scrape subtitle tracks from the player ───────
+                            // HahoMoe includes <track kind="subtitles"> elements
+                            // inside its HTML5 player. Collect them now so we
+                            // can attach them to each video object below.
+                            var scrapedSubtitles = [];
+                            var loadSubs = new SharedPreferences().get("load_subtitles");
+                            var wantSubs = (loadSubs === true || loadSubs === "true");
+                            if (wantSubs) {
+                                try {
+                                    var trackEls = iframeDoc.select("track[kind=subtitles], track[kind=captions], track");
+                                    for (var track of trackEls) {
+                                        var trackSrc = track.attr("src") || "";
+                                        var trackLabel = track.attr("label") || track.attr("srclang") || "Subtitle";
+                                        if (trackSrc) {
+                                            if (!trackSrc.startsWith("http")) {
+                                                if (trackSrc.startsWith("//")) trackSrc = "https:" + trackSrc;
+                                                else trackSrc = this.baseUrl + trackSrc;
+                                            }
+                                            scrapedSubtitles.push({ url: trackSrc, label: trackLabel });
+                                            console.log("Found track subtitle: " + trackLabel + " -> " + trackSrc);
+                                        }
+                                    }
+                                } catch (trackErr) {
+                                    console.log("Track scrape error: " + trackErr);
+                                }
+
+                                // Fallback: regex scan for .vtt URLs in case player uses JS config
+                                if (scrapedSubtitles.length === 0) {
+                                    var vttMatches = iframeHtml.match(/https?:\/\/[^\s"'<>]+\.vtt[^\s"'<>]*/g) || [];
+                                    for (var vttUrl of vttMatches) {
+                                        if (!scrapedSubtitles.some(function(s) { return s.url === vttUrl; })) {
+                                            scrapedSubtitles.push({ url: vttUrl, label: "Subtitle" });
+                                            console.log("Found vtt subtitle (regex): " + vttUrl);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── Video sources ────────────────────────────────
                             var sources = iframeDoc.select("video#player > source");
                             console.log("Found video sources: " + sources.length);
 
@@ -371,28 +412,33 @@ class DefaultExtension extends MProvider {
                                         else src = this.baseUrl + src;
                                     }
 
-                                    videos.push({
+                                    var videoObj = {
                                         url: src,
                                         originalUrl: src,
                                         quality: "HahoMoe - " + quality,
-                                        headers: {
-                                            "Referer": iframeUrl
-                                        }
-                                    });
+                                        headers: { "Referer": iframeUrl }
+                                    };
+                                    if (wantSubs && scrapedSubtitles.length > 0) {
+                                        videoObj.subtitles = scrapedSubtitles;
+                                    }
+                                    videos.push(videoObj);
                                     console.log("Added video: " + quality + " -> " + src);
                                 }
                             }
 
-                            var iframeHtml = iframeRes.body;
                             var m3u8Matches = iframeHtml.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/g) || [];
                             for (var m3u8 of m3u8Matches) {
                                 if (!videos.some(function(v) { return v.url === m3u8; })) {
-                                    videos.push({
+                                    var hlsObj = {
                                         url: m3u8,
                                         originalUrl: m3u8,
                                         quality: "HahoMoe - HLS",
                                         headers: { "Referer": iframeUrl }
-                                    });
+                                    };
+                                    if (wantSubs && scrapedSubtitles.length > 0) {
+                                        hlsObj.subtitles = scrapedSubtitles;
+                                    }
+                                    videos.push(hlsObj);
                                 }
                             }
                         }
@@ -467,6 +513,14 @@ class DefaultExtension extends MProvider {
                 }
             }
 
+            // Sort by preferred quality — put preferred resolution first
+            var prefQuality = new SharedPreferences().get("preferred_quality") || "1080";
+            videos.sort(function(a, b) {
+                var aMatch = (a.quality || "").includes(prefQuality) ? 0 : 1;
+                var bMatch = (b.quality || "").includes(prefQuality) ? 0 : 1;
+                return aMatch - bMatch;
+            });
+
             console.log("Total videos: " + videos.length);
             return videos;
         } catch (e) {
@@ -484,6 +538,25 @@ class DefaultExtension extends MProvider {
     }
 
     getSourcePreferences() {
-        return [];
+        return [
+            {
+                key: "preferred_quality",
+                listPreference: {
+                    title: "Preferred Quality",
+                    summary: "Select your preferred video resolution",
+                    valueIndex: 0,
+                    entries: ["1080p", "720p", "480p", "360p"],
+                    entryValues: ["1080", "720", "480", "360"]
+                }
+            },
+            {
+                key: "load_subtitles",
+                switchPreferenceCompat: {
+                    title: "Load Subtitles",
+                    summary: "Attach subtitle tracks from the player when available",
+                    value: true
+                }
+            }
+        ];
     }
 }

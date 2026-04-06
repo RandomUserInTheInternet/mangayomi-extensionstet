@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.1.2",
+    "version": "0.1.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": true,
@@ -18,7 +18,8 @@ class DefaultExtension extends MProvider {
     constructor() {
         super();
         this.client = new Client();
-        this.baseUrl = "https://oppai.stream";
+        var overrideUrl = new SharedPreferences().get("overrideBaseUrl");
+        this.baseUrl = (overrideUrl && overrideUrl.trim() !== "") ? overrideUrl.trim() : "https://oppai.stream";
     }
 
     getPreference(key) {
@@ -335,6 +336,44 @@ class DefaultExtension extends MProvider {
         }
     }
 
+    // ── Subtitle helpers ──────────────────────────────────────────────────────
+    // Oppai.stream serves subtitles alongside every video on myspacecat.pictures.
+    // Pattern: https://myspacecat.pictures/{Anime}/{Quality}/E{N}.mp4
+    //      →   https://myspacecat.pictures/{Anime}/{Quality}/E{N}_SUB_1.vtt?v=1
+    buildSubtitleUrl(videoUrl) {
+        try {
+            // Works for both .mp4 and .m3u8 URLs hosted on myspacecat.pictures
+            const mp4Match = videoUrl.match(/^(https?:\/\/[^/]*myspacecat[^?#]+?)(?:\.mp4|\.m3u8).*$/);
+            if (mp4Match) {
+                return mp4Match[1] + "_SUB_1.vtt?v=1";
+            }
+            // Generic fallback: strip extension and append _SUB_1.vtt
+            const extMatch = videoUrl.match(/^(https?:\/\/.+?)\.[a-z0-9]{2,5}(\?.*)?$/);
+            if (extMatch) {
+                return extMatch[1] + "_SUB_1.vtt?v=1";
+            }
+        } catch (e) {
+            console.log("buildSubtitleUrl error: " + e);
+        }
+        return null;
+    }
+
+    async fetchSubtitleIfExists(subtitleUrl) {
+        try {
+            const res = await this.client.get(subtitleUrl, {
+                "Referer": this.baseUrl + "/",
+                "User-Agent": this.getHeaders()["User-Agent"]
+            });
+            if (res.statusCode === 200 && (res.body || "").includes("WEBVTT")) {
+                console.log("Subtitle confirmed: " + subtitleUrl);
+                return subtitleUrl;
+            }
+        } catch (e) {
+            console.log("Subtitle check failed for " + subtitleUrl + ": " + e);
+        }
+        return null;
+    }
+
     async getVideoList(url) {
         let fullUrl = url;
         if (!url.startsWith("http")) {
@@ -479,6 +518,35 @@ class DefaultExtension extends MProvider {
                 }
             }
             
+            // Sort by preferred quality — put preferred resolution first
+            const prefQuality = new SharedPreferences().get("preferred_quality") || "1080";
+            videos.sort((a, b) => {
+                const aMatch = (a.quality || "").includes(prefQuality) ? 0 : 1;
+                const bMatch = (b.quality || "").includes(prefQuality) ? 0 : 1;
+                return aMatch - bMatch;
+            });
+
+            // Attach subtitles when the setting is enabled
+            // Oppai.stream subtitle URL = video base URL + _SUB_1.vtt?v=1
+            const loadSubs = new SharedPreferences().get("load_subtitles");
+            const wantSubs = (loadSubs === true || loadSubs === "true");
+            if (wantSubs) {
+                console.log("Loading subtitles for " + videos.length + " videos");
+                for (const video of videos) {
+                    try {
+                        const subUrl = this.buildSubtitleUrl(video.url);
+                        if (subUrl) {
+                            const confirmedUrl = await this.fetchSubtitleIfExists(subUrl);
+                            if (confirmedUrl) {
+                                video.subtitles = [{ url: confirmedUrl, label: "English" }];
+                            }
+                        }
+                    } catch (subErr) {
+                        console.log("Subtitle attach error: " + subErr);
+                    }
+                }
+            }
+
             console.log("Total videos found: " + videos.length);
             return videos;
         } catch (e) {
@@ -492,16 +560,36 @@ class DefaultExtension extends MProvider {
     }
 
     getSourcePreferences() {
-        return [{
-            key: "overrideBaseUrl",
-            editTextPreference: {
-                title: "Override BaseUrl",
-                summary: "Enter the base URL if it has changed",
-                value: "https://oppai.stream",
-                dialogTitle: "Override BaseUrl",
-                dialogMessage: "Enter the base URL if it has changed",
+        return [
+            {
+                key: "preferred_quality",
+                listPreference: {
+                    title: "Preferred Quality",
+                    summary: "Select your preferred video resolution",
+                    valueIndex: 0,
+                    entries: ["1080p", "720p", "480p", "360p"],
+                    entryValues: ["1080", "720", "480", "360"]
+                }
+            },
+            {
+                key: "load_subtitles",
+                switchPreferenceCompat: {
+                    title: "Load Subtitles",
+                    summary: "Automatically attach English subtitles (VTT) when available",
+                    value: true
+                }
+            },
+            {
+                key: "overrideBaseUrl",
+                editTextPreference: {
+                    title: "Override Base URL",
+                    summary: "Change the base URL if the site has moved (e.g. https://oppai.stream)",
+                    value: "https://oppai.stream",
+                    dialogTitle: "Override Base URL",
+                    dialogMessage: "Enter the full base URL of the site",
+                }
             }
-        }];
+        ];
     }
 
     getFilterList() {
