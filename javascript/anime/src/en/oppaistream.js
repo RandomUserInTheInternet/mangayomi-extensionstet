@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.1.5",
+    "version": "0.1.6",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": true,
@@ -375,18 +375,40 @@ class DefaultExtension extends MProvider {
         return null;
     }
 
-    async fetchSubtitleIfExists(subtitleUrl) {
+    // Fetch the VTT, fix its format issues, and return a cleaned data: URL.
+    // Oppai.stream VTTs use 2-part timestamps (MM:SS.mmm) instead of the
+    // 3-part form (HH:MM:SS.mmm) that Mangayomi requires, and include <i>
+    // HTML cue tags that can also trip up the parser.
+    async fetchAndCleanSubtitle(subtitleUrl) {
         try {
             const res = await this.client.get(subtitleUrl, {
                 "Referer": this.baseUrl + "/",
                 "User-Agent": this.getHeaders()["User-Agent"]
             });
-            if (res.statusCode === 200 && (res.body || "").toUpperCase().includes("WEBVTT")) {
-                console.log("Subtitle confirmed: " + subtitleUrl);
-                return subtitleUrl;
-            }
+            if (res.statusCode !== 200) return null;
+            let vtt = res.body || "";
+            if (!vtt.toUpperCase().includes("WEBVTT")) return null;
+
+            // 1. Convert 2-part timestamps  MM:SS.mmm -> HH:MM:SS.mmm
+            //    e.g. "00:02.510 --> 00:05.180" -> "00:00:02.510 --> 00:00:05.180"
+            vtt = vtt.replace(
+                /^(\d{1,2}:\d{2}\.\d{3})(\s+-->\s+)(\d{1,2}:\d{2}\.\d{3})(.*)?$/gm,
+                function(match, ts1, sep, ts2, rest) {
+                    function fix(ts) {
+                        return (ts.split(':').length === 2) ? '00:' + ts : ts;
+                    }
+                    return fix(ts1) + sep + fix(ts2) + (rest || '');
+                }
+            );
+
+            // 2. Strip HTML/VTT cue-span tags  (<i>, </i>, <b>, <c.color>, etc.)
+            vtt = vtt.replace(/<[^>]+>/g, '');
+
+            // 3. Return as data URL so Mangayomi loads the clean content directly
+            console.log("Subtitle cleaned and encoded for: " + subtitleUrl);
+            return 'data:text/vtt;charset=utf-8,' + encodeURIComponent(vtt);
         } catch (e) {
-            console.log("Subtitle check failed for " + subtitleUrl + ": " + e);
+            console.log("fetchAndCleanSubtitle error for " + subtitleUrl + ": " + e);
         }
         return null;
     }
@@ -553,9 +575,9 @@ class DefaultExtension extends MProvider {
                     try {
                         const subUrl = this.buildSubtitleUrl(video.url);
                         if (subUrl) {
-                            const confirmedUrl = await this.fetchSubtitleIfExists(subUrl);
-                            if (confirmedUrl) {
-                                video.subtitles = [{ url: confirmedUrl, label: "English" }];
+                            const cleanedUrl = await this.fetchAndCleanSubtitle(subUrl);
+                            if (cleanedUrl) {
+                                video.subtitles = [{ url: cleanedUrl, label: "English" }];
                             }
                         }
                     } catch (subErr) {
