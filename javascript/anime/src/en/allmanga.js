@@ -2,16 +2,16 @@ const mangayomiSources = [{
     "name": "AllManga",
     "lang": "en",
     "baseUrl": "https://allmanga.to",
-    "apiUrl": "https://api.allanime.day/api",
+    "apiUrl": "https://api.allanime.co/api",
     "iconUrl": "https://www.google.com/s2/favicons?sz=128&domain=allmanga.to",
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.0.4",
+    "version": "0.0.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": false,
-    "hasCloudflare": false,
+    "hasCloudflare": true,
     "sourceCodeUrl": "https://raw.githubusercontent.com/RandomUserInTheInternet/mangayomi-extensionstet/main/javascript/anime/src/en/allmanga.js",
     "isFullData": false,
     "appMinVerReq": "0.5.0",
@@ -26,7 +26,7 @@ class DefaultExtension extends MProvider {
     constructor() {
         super();
         this.client = new Client();
-        this.apiUrl = "https://api.allanime.day/api";
+        this.apiUrl = "https://api.allanime.co/api";
         this.baseUrl = "https://allmanga.to";
         this.thumbnailPrefix = "https://wp.youtube-anime.com/aln.youtube-anime.com/";
     }
@@ -252,7 +252,7 @@ class DefaultExtension extends MProvider {
 
     async resolveInternalUrl(path) {
         try {
-            var clockUrl = "https://allanime.day" + path;
+            var clockUrl = "https://allanime.co" + path;
             var res = await this.client.get(clockUrl, this.getHeaders());
             if (res.statusCode === 200) {
                 var data = JSON.parse(res.body);
