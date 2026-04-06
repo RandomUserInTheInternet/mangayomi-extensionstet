@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.0.1",
+    "version": "0.0.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": false,
@@ -27,7 +27,7 @@ class DefaultExtension extends MProvider {
         super();
         this.client = new Client();
         this.baseUrl = "https://kaa.lt";
-        this.posterBase = "https://i.kaa.lt/image/";
+        this.posterBase = "https://kaa.lt/image/poster/";
     }
 
     getHeaders() {
@@ -39,51 +39,46 @@ class DefaultExtension extends MProvider {
         };
     }
 
-    getPageHeaders() {
-        return {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-            "Referer": this.baseUrl + "/",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        };
+    // Build a poster URL from the API poster object
+    // API returns: { hq: "slug-hq", sm: "slug-sm", formats: [...] }
+    // Full URL:    https://kaa.lt/image/poster/{slug}.webp
+    buildPoster(posterObj) {
+        if (!posterObj) return "";
+        var slug = posterObj.hq || posterObj.sm || "";
+        if (!slug) return "";
+        return this.posterBase + slug + ".webp";
     }
 
-    // ── Poster URL builder ────────────────────────────────────────────────────
-    buildPoster(poster) {
-        if (!poster) return "";
-        if (poster.startsWith("http")) return poster;
-        // poster.hq or poster.sm is a slug like "theatre-of-darkness-yamishibai-16-bb77-hq"
-        // Full URL: https://i.kaa.lt/image/{slug}.jpeg
-        return this.posterBase + poster + ".jpeg";
-    }
-
-    // ── API GET helper ────────────────────────────────────────────────────────
+    // GET /api{path}
     async apiGet(path) {
         var url = this.baseUrl + "/api" + path;
         console.log("KAA GET: " + url);
         var res = await this.client.get(url, this.getHeaders());
         if (res.statusCode !== 200) {
-            console.log("KAA API status: " + res.statusCode + " for " + url);
+            console.log("KAA GET " + res.statusCode + " for " + url);
             throw new Error("API returned " + res.statusCode);
         }
         return JSON.parse(res.body);
     }
 
-    // ── API POST helper ───────────────────────────────────────────────────────
-    async apiPost(path, body) {
-        var url = this.baseUrl + "/api" + path;
-        console.log("KAA POST: " + url);
-        var headers = Object.assign({}, this.getHeaders(), {
-            "Content-Type": "application/json"
-        });
-        var res = await this.client.post(url, headers, JSON.stringify(body));
+    // Search POST — body must be a plain JS object (NOT JSON.stringify).
+    // Mangayomi's client.post() serializes the object internally.
+    // See: novelupdates.js pattern: client.post(url, headers, { key: val })
+    async searchPost(query, page) {
+        var url = this.baseUrl + "/api/fsearch";
+        console.log("KAA searchPost: query=" + query + " page=" + page);
+        var res = await this.client.post(url, {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0"
+        }, { page: page, query: query });
+        console.log("KAA searchPost status: " + res.statusCode);
         if (res.statusCode !== 200) {
-            console.log("KAA API POST status: " + res.statusCode);
-            throw new Error("API returned " + res.statusCode);
+            throw new Error("searchPost returned " + res.statusCode);
         }
         return JSON.parse(res.body);
     }
 
-    // ── Map status string → Mangayomi int ────────────────────────────────────
+    // Map KAA status string to Mangayomi int
     parseStatus(statusStr) {
         if (!statusStr) return 5;
         var s = statusStr.toLowerCase();
@@ -93,116 +88,108 @@ class DefaultExtension extends MProvider {
         return 5;
     }
 
-    // ── getPopular ────────────────────────────────────────────────────────────
+    // getPopular: currently airing anime
     async getPopular(page) {
         console.log("KAA getPopular page=" + page);
         try {
-            // Use the airing/season endpoint
-            var data = await this.apiGet("/top-anime?type=all&page=" + page);
+            var data = await this.apiGet("/anime?page=" + page + "&status=currently_airing");
             var list = [];
-            var items = data.result || data.data || [];
+            var items = data.result || [];
             for (var item of items) {
-                var poster = item.poster
-                    ? this.buildPoster(item.poster.hq || item.poster.sm || "")
-                    : "";
+                if (!item.watch_uri) continue;
                 list.push({
                     name: item.title_en || item.title || "",
-                    imageUrl: poster,
+                    imageUrl: this.buildPoster(item.poster),
                     link: item.slug || ""
                 });
             }
-            var hasNextPage = items.length >= 26;
-            console.log("getPopular: " + list.length + " results");
-            return { list, hasNextPage };
+            var maxPage = data.maxPage || 1;
+            console.log("getPopular: " + list.length + " results, maxPage=" + maxPage);
+            return { list, hasNextPage: page < maxPage };
         } catch (e) {
             console.log("getPopular error: " + e);
             return { list: [], hasNextPage: false };
         }
     }
 
-    // ── getLatestUpdates ──────────────────────────────────────────────────────
+    // getLatestUpdates: all anime sorted by recency
     async getLatestUpdates(page) {
         console.log("KAA getLatestUpdates page=" + page);
         try {
-            var data = await this.apiGet("/recent-episodes?page=" + page + "&lang=ja-JP");
+            var data = await this.apiGet("/anime?page=" + page);
             var list = [];
-            var items = data.result || data.data || [];
+            var items = data.result || [];
             for (var item of items) {
-                var poster = item.show
-                    ? this.buildPoster((item.show.poster || {}).hq || "")
-                    : this.buildPoster((item.poster || {}).hq || "");
-                var slug = item.show_slug || (item.show && item.show.slug) || item.slug || "";
-                var title = item.show_title || (item.show && item.show.title_en) || item.title_en || item.title || "";
-                if (slug) {
-                    list.push({ name: title, imageUrl: poster, link: slug });
-                }
-            }
-            var hasNextPage = items.length >= 26;
-            console.log("getLatestUpdates: " + list.length + " results");
-            return { list, hasNextPage };
-        } catch (e) {
-            console.log("getLatestUpdates error: " + e);
-            // Fallback to popular if recent-episodes endpoint differs
-            return await this.getPopular(page);
-        }
-    }
-
-    // ── search ────────────────────────────────────────────────────────────────
-    async search(query, page, filters) {
-        console.log("KAA search: " + query);
-        try {
-            var data = await this.apiPost("/fsearch", { page: page, query: query });
-            var list = [];
-            var items = data.result || data.data || [];
-            for (var item of items) {
-                var poster = item.poster
-                    ? this.buildPoster(item.poster.hq || item.poster.sm || "")
-                    : "";
+                if (!item.watch_uri) continue;
                 list.push({
                     name: item.title_en || item.title || "",
-                    imageUrl: poster,
+                    imageUrl: this.buildPoster(item.poster),
                     link: item.slug || ""
                 });
             }
-            var hasNextPage = items.length >= 26;
+            var maxPage = data.maxPage || 1;
+            console.log("getLatestUpdates: " + list.length + " results");
+            return { list, hasNextPage: page < maxPage };
+        } catch (e) {
+            console.log("getLatestUpdates error: " + e);
+            return { list: [], hasNextPage: false };
+        }
+    }
+
+    // search: POST /api/fsearch with { page, query }
+    async search(query, page, filters) {
+        console.log("KAA search: " + query);
+        try {
+            var data = await this.searchPost(query, page);
+            var list = [];
+            var items = data.result || [];
+            for (var item of items) {
+                if (!item.watch_uri) continue;
+                list.push({
+                    name: item.title_en || item.title || "",
+                    imageUrl: this.buildPoster(item.poster),
+                    link: item.slug || ""
+                });
+            }
+            var maxPage = data.maxPage || 1;
             console.log("search: " + list.length + " results");
-            return { list, hasNextPage };
+            return { list, hasNextPage: page < maxPage };
         } catch (e) {
             console.log("search error: " + e);
             return { list: [], hasNextPage: false };
         }
     }
 
-    // ── getDetail ─────────────────────────────────────────────────────────────
+    // getDetail: show metadata + full episode list
     async getDetail(url) {
         console.log("KAA getDetail: " + url);
         try {
-            var animeSlug = url; // stored as slug from search/popular
+            var animeSlug = url;
 
-            // Fetch show metadata
             var show = await this.apiGet("/show/" + animeSlug);
 
             var title = show.title_en || show.title || "";
-            var imageUrl = show.poster
-                ? this.buildPoster(show.poster.hq || show.poster.sm || "")
-                : "";
+            var imageUrl = this.buildPoster(show.poster);
             var description = show.synopsis || "";
             var genre = show.genres || [];
             var status = this.parseStatus(show.status);
 
-            // Determine the preferred language (default to first available)
-            var lang = "ja-JP";
+            // Use sub/dub preference to pick language locale
+            var prefLang = new SharedPreferences().get("sub_or_dub") || "ja-JP";
+            var lang = prefLang;
+            // Verify the preferred locale is available; if not, fall back to first
             if (show.locales && show.locales.length > 0) {
-                lang = show.locales[0];
+                if (show.locales.includes(prefLang)) {
+                    lang = prefLang;
+                } else {
+                    lang = show.locales[0];
+                }
             }
 
-            // Fetch all episodes — paginated via the "pages" field
+            // Fetch episodes (all pages)
             var chapters = [];
-            // First page to discover page count
             var firstPage = await this.apiGet("/show/" + animeSlug + "/episodes?ep=1&lang=" + lang);
             var pages = firstPage.pages || [];
-
-            // Build episode list from all pages
             var allEpisodes = firstPage.result || [];
 
             for (var p = 1; p < pages.length; p++) {
@@ -216,14 +203,12 @@ class DefaultExtension extends MProvider {
                 }
             }
 
-            // Convert to Mangayomi chapter format (newest first via episode_desc sort)
-            // KAA returns episodes ascending; reverse for Mangayomi convention
+            // Sort newest first
             allEpisodes.sort(function(a, b) { return b.episode_number - a.episode_number; });
 
             for (var ep of allEpisodes) {
                 var epNum = ep.episode_number || 0;
                 var epSlug = ep.slug || "";
-                // Store: animeSlug||ep-{num}-{epSlug}||lang
                 chapters.push({
                     name: "Episode " + ep.episode_string,
                     url: animeSlug + "||ep-" + epNum + "-" + epSlug + "||" + lang,
@@ -247,7 +232,7 @@ class DefaultExtension extends MProvider {
         }
     }
 
-    // ── getVideoList ──────────────────────────────────────────────────────────
+    // getVideoList: fetch krussdomi player page and extract .m3u8 manifest
     async getVideoList(url) {
         console.log("KAA getVideoList: " + url);
         try {
@@ -257,13 +242,10 @@ class DefaultExtension extends MProvider {
                 return [];
             }
             var animeSlug = parts[0];
-            var episodeSlug = parts[1]; // e.g. "ep-13-09316a"
+            var episodeSlug = parts[1];
             var lang = parts[2] || "ja-JP";
 
-            // Step 1: get episode info (includes server list with krussdomi URL)
-            var epInfo = await this.apiGet(
-                "/show/" + animeSlug + "/episode/" + episodeSlug
-            );
+            var epInfo = await this.apiGet("/show/" + animeSlug + "/episode/" + episodeSlug);
 
             var servers = epInfo.servers || [];
             if (servers.length === 0) {
@@ -281,39 +263,33 @@ class DefaultExtension extends MProvider {
                     if (!playerUrl) continue;
                     console.log("Fetching player: " + playerUrl);
 
-                    // Step 2: Fetch the krussdomi player page
-                    var playerHeaders = {
+                    var playerRes = await this.client.get(playerUrl, {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
                         "Referer": this.baseUrl + "/",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                    };
-                    var playerRes = await this.client.get(playerUrl, playerHeaders);
+                    });
                     if (playerRes.statusCode !== 200) {
                         console.log("Player page status: " + playerRes.statusCode);
                         continue;
                     }
 
                     var playerHtml = playerRes.body;
-
-                    // Step 3: Extract manifest URL from astro-island props
-                    // The props attr contains HTML-encoded JSON with the manifest URL
-                    // Pattern: &quot;manifest&quot;:[0,&quot;https://hls.krussdomi.com/...&quot;]
                     var m3u8Url = null;
 
-                    // Primary: extract from astro-island props attribute
-                    // The manifest field is: "manifest":[0,"https://hls.krussdomi.com/..."]
+                    // Primary: astro-island props (HTML-encoded JSON)
+                    // Pattern: &quot;manifest&quot;:[0,&quot;https://hls.krussdomi.com/...&quot;]
                     var propsMatch = playerHtml.match(/&quot;manifest&quot;:\[0,&quot;(https?:\/\/[^&]+)&quot;\]/);
                     if (propsMatch) {
                         m3u8Url = propsMatch[1];
-                        console.log("Found manifest from props: " + m3u8Url);
+                        console.log("Found manifest (props): " + m3u8Url);
                     }
 
-                    // Fallback: look for any hls.krussdomi.com URL
+                    // Fallback: playlist.m3u8 on krussdomi
                     if (!m3u8Url) {
-                        var cdnMatch = playerHtml.match(/https?:\/\/hls\.krussdomi\.com\/[^"'\s&]+master\.m3u8/);
+                        var cdnMatch = playerHtml.match(/https?:\/\/hls\.krussdomi\.com\/[^"'\s&]+playlist\.m3u8/);
                         if (cdnMatch) {
                             m3u8Url = cdnMatch[0];
-                            console.log("Found manifest (fallback): " + m3u8Url);
+                            console.log("Found manifest (fallback1): " + m3u8Url);
                         }
                     }
 
@@ -322,7 +298,7 @@ class DefaultExtension extends MProvider {
                         var anyM3u8 = playerHtml.match(/https?:\/\/hls\.krussdomi\.com\/[^"'\s&]+\.m3u8/);
                         if (anyM3u8) {
                             m3u8Url = anyM3u8[0];
-                            console.log("Found m3u8 (fallback2): " + m3u8Url);
+                            console.log("Found manifest (fallback2): " + m3u8Url);
                         }
                     }
 
@@ -337,12 +313,20 @@ class DefaultExtension extends MProvider {
                             }
                         });
                     } else {
-                        console.log("No m3u8 found in player page for server: " + serverName);
+                        console.log("No m3u8 found for server: " + serverName);
                     }
                 } catch (serverErr) {
-                    console.log("Server processing error: " + serverErr);
+                    console.log("Server error: " + serverErr);
                 }
             }
+
+            // Sort by preferred quality — put the preferred resolution first
+            var prefQuality = new SharedPreferences().get("preferred_quality") || "1080";
+            videos.sort(function(a, b) {
+                var aMatch = (a.quality || "").includes(prefQuality) ? 0 : 1;
+                var bMatch = (b.quality || "").includes(prefQuality) ? 0 : 1;
+                return aMatch - bMatch;
+            });
 
             console.log("Total videos: " + videos.length);
             return videos;
@@ -354,5 +338,39 @@ class DefaultExtension extends MProvider {
 
     async getPageList(url) { return []; }
     getFilterList() { return []; }
-    getSourcePreferences() { return []; }
+
+    getSourcePreferences() {
+        return [
+            {
+                key: "preferred_quality",
+                listPreference: {
+                    title: "Preferred Quality",
+                    summary: "Select your preferred video resolution",
+                    valueIndex: 0,
+                    entries: ["1080p", "720p", "480p", "360p"],
+                    entryValues: ["1080", "720", "480", "360"]
+                }
+            },
+            {
+                key: "sub_or_dub",
+                listPreference: {
+                    title: "Prefer Subs or Dubs?",
+                    summary: "Preferred audio type",
+                    valueIndex: 0,
+                    entries: ["Subs", "Dubs"],
+                    entryValues: ["ja-JP", "en-US"]
+                }
+            },
+            {
+                key: "preferred_server",
+                listPreference: {
+                    title: "Preferred Video Server",
+                    summary: "Select your preferred server (any = no preference)",
+                    valueIndex: 0,
+                    entries: ["Any", "Default"],
+                    entryValues: ["any", "default"]
+                }
+            }
+        ];
+    }
 }

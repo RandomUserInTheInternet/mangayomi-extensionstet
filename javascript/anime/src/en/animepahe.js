@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.0.4",
+    "version": "0.0.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": false,
@@ -479,6 +479,14 @@ class DefaultExtension extends MProvider {
                 videos = await this.extractKwikUrl(playUrl);
             }
 
+            // Sort by preferred quality — put preferred resolution first
+            var prefQuality = new SharedPreferences().get("preferred_quality") || "1080";
+            videos.sort(function(a, b) {
+                var aMatch = (a.quality || "").includes(prefQuality) ? 0 : 1;
+                var bMatch = (b.quality || "").includes(prefQuality) ? 0 : 1;
+                return aMatch - bMatch;
+            });
+
             console.log("Total videos: " + videos.length);
             return videos;
         } catch (e) {
@@ -491,6 +499,27 @@ class DefaultExtension extends MProvider {
     getFilterList() { return []; }
 
     getSourcePreferences() {
-        return [];
+        return [
+            {
+                key: "preferred_quality",
+                listPreference: {
+                    title: "Preferred Quality",
+                    summary: "Select your preferred video resolution",
+                    valueIndex: 0,
+                    entries: ["1080p", "720p", "480p", "360p"],
+                    entryValues: ["1080", "720", "480", "360"]
+                }
+            },
+            {
+                key: "stream_type",
+                listPreference: {
+                    title: "Stream Type",
+                    summary: "Prefer subtitled (sub) or dubbed (dub) audio",
+                    valueIndex: 0,
+                    entries: ["Sub", "Dub"],
+                    entryValues: ["sub", "dub"]
+                }
+            }
+        ];
     }
 }
