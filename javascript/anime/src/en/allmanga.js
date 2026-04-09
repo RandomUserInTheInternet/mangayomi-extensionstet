@@ -7,11 +7,11 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.0.4",
+    "version": "0.0.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": false,
-    "hasCloudflare": false,
+    "hasCloudflare": true,
     "sourceCodeUrl": "https://raw.githubusercontent.com/RandomUserInTheInternet/mangayomi-extensionstet/main/javascript/anime/src/en/allmanga.js",
     "isFullData": false,
     "appMinVerReq": "0.5.0",
@@ -252,7 +252,7 @@ class DefaultExtension extends MProvider {
 
     async resolveInternalUrl(path) {
         try {
-            var clockUrl = "https://allanime.day" + path;
+            var clockUrl = "https://allanime.to" + path;
             var res = await this.client.get(clockUrl, this.getHeaders());
             if (res.statusCode === 200) {
                 var data = JSON.parse(res.body);
@@ -336,8 +336,9 @@ class DefaultExtension extends MProvider {
 
                     var resolvedUrl = rawUrl;
 
-                    if (rawUrl.startsWith("--")) {
-                        resolvedUrl = this.xorDecode(rawUrl.substring(2));
+                    if (rawUrl.startsWith("-")) {
+                        var encoded = rawUrl.substring(rawUrl.lastIndexOf("-") + 1);
+                        resolvedUrl = this.xorDecode(encoded);
                     } else if (rawUrl.startsWith("/")) {
                         resolvedUrl = await this.resolveInternalUrl(rawUrl);
                     }
