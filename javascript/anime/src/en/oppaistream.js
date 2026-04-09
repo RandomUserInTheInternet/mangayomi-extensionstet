@@ -18,9 +18,27 @@ class DefaultExtension extends MProvider {
     constructor() {
         super();
         this.client = new Client();
-        var overrideUrl = new SharedPreferences().get("overrideBaseUrl");
-        this.baseUrl = (overrideUrl && overrideUrl.trim() !== "") ? overrideUrl.trim() : "https://oppai.stream";
+        // NOTE: Do NOT call SharedPreferences here — sendMessage() is a
+        // synchronous FFI callback that acquires the Dart isolate lock.
+        // Calling it during construction (which itself runs inside _init())
+        // causes a re-entrant lock acquisition that crashes the QuickJS
+        // TrampolinePage (js_channel+100, libqjs.so) in Nuord v3.3.2+.
+        // Base URL is resolved lazily on first access instead.
+        this._baseUrl = null;
     }
+
+    // Lazy getter — SharedPreferences is safe to call here because any
+    // caller of baseUrl runs *after* _init() has completed.
+    get baseUrl() {
+        if (!this._baseUrl) {
+            var overrideUrl = new SharedPreferences().get("overrideBaseUrl");
+            this._baseUrl = (overrideUrl && overrideUrl.trim() !== "")
+                ? overrideUrl.trim()
+                : "https://oppai.stream";
+        }
+        return this._baseUrl;
+    }
+    set baseUrl(v) { this._baseUrl = v; }
 
     getPreference(key) {
         return new SharedPreferences().get(key);
@@ -336,33 +354,37 @@ class DefaultExtension extends MProvider {
         }
     }
 
-    // ── Subtitle helpers ──────────────────────────────────────────────────────
+    // ── Subtitle URL builder ──────────────────────────────────────────────────
     // Oppai.stream serves subtitles alongside every video on myspacecat.pictures.
     // Pattern: https://myspacecat.pictures/{Anime}/{Quality}/E{N}.mp4
     //      →   https://myspacecat.pictures/{Anime}/{Quality}/E{N}_SUB_1.vtt?v=1
+    //
+    // IMPORTANT: We return the raw VTT URL, NOT a data: URI.
+    // Embedding the full VTT content as a percent-encoded data: string easily
+    // produces 200 KB–1 MB payloads. The QuickJS TrampolinePage in Nuord v3.3.2
+    // caps each js_channel slab at 512 KB; exceeding this causes a native crash
+    // (js_channel+100 / FfiCallbackMetadata::TrampolinePage). The native player
+    // in watch_screen.dart handles .vtt URLs directly via SubtitleTrack.
     buildSubtitleUrl(videoUrl) {
         if (!videoUrl.includes("myspacecat.pictures")) return null;
         try {
-            // First, strip query params and trailing slashes
+            // Strip query params and trailing slashes
             let cleanUrl = videoUrl.split('?')[0].split('#')[0];
             if (cleanUrl.endsWith('/')) cleanUrl = cleanUrl.slice(0, -1);
 
-            // 1. Handle folders like E01_dash or E01_hls
-            // Example: .../1080/E01_dash/index.m3u8 -> .../1080/E01_SUB_1.vtt
+            // 1. Handle HLS/DASH folders: .../E01_dash/index.m3u8 → .../E01_SUB_1.vtt
             const folderMatch = cleanUrl.match(/^(https?:\/\/.+?\/E\d+)(?:_dash|_hls).*/);
             if (folderMatch) {
                 return folderMatch[1] + "_SUB_1.vtt?v=1";
             }
 
-            // 2. Handle direct files like E01.mp4 or E01.m3u8
-            // Example: .../1080/E01.mp4 -> .../1080/E01_SUB_1.vtt
+            // 2. Handle direct files: .../E01.mp4 → .../E01_SUB_1.vtt
             const fileMatch = cleanUrl.match(/^(https?:\/\/.+?\/E\d+)(?:\.mp4|\.m3u8|\.mpd)$/);
             if (fileMatch) {
                 return fileMatch[1] + "_SUB_1.vtt?v=1";
             }
-            
-            // 3. Generic fallback: strip extension and append _SUB_1.vtt
-            // Only if it looks like a myspacecat URL with an episode number
+
+            // 3. Generic fallback for any myspacecat episode URL
             if (cleanUrl.match(/\/E\d+/)) {
                 const genericMatch = cleanUrl.match(/^(https?:\/\/.+?)\.[a-z0-9]{2,5}$/);
                 if (genericMatch) {
@@ -371,44 +393,6 @@ class DefaultExtension extends MProvider {
             }
         } catch (e) {
             console.log("buildSubtitleUrl error: " + e);
-        }
-        return null;
-    }
-
-    // Fetch the VTT, fix its format issues, and return a cleaned data: URL.
-    // Oppai.stream VTTs use 2-part timestamps (MM:SS.mmm) instead of the
-    // 3-part form (HH:MM:SS.mmm) that Mangayomi requires, and include <i>
-    // HTML cue tags that can also trip up the parser.
-    async fetchAndCleanSubtitle(subtitleUrl) {
-        try {
-            const res = await this.client.get(subtitleUrl, {
-                "Referer": this.baseUrl + "/",
-                "User-Agent": this.getHeaders()["User-Agent"]
-            });
-            if (res.statusCode !== 200) return null;
-            let vtt = res.body || "";
-            if (!vtt.toUpperCase().includes("WEBVTT")) return null;
-
-            // 1. Convert 2-part timestamps  MM:SS.mmm -> HH:MM:SS.mmm
-            //    e.g. "00:02.510 --> 00:05.180" -> "00:00:02.510 --> 00:00:05.180"
-            vtt = vtt.replace(
-                /^(\d{1,2}:\d{2}\.\d{3})(\s+-->\s+)(\d{1,2}:\d{2}\.\d{3})(.*)?$/gm,
-                function(match, ts1, sep, ts2, rest) {
-                    function fix(ts) {
-                        return (ts.split(':').length === 2) ? '00:' + ts : ts;
-                    }
-                    return fix(ts1) + sep + fix(ts2) + (rest || '');
-                }
-            );
-
-            // 2. Strip HTML/VTT cue-span tags  (<i>, </i>, <b>, <c.color>, etc.)
-            vtt = vtt.replace(/<[^>]+>/g, '');
-
-            // 3. Return as data URL so Mangayomi loads the clean content directly
-            console.log("Subtitle cleaned and encoded for: " + subtitleUrl);
-            return 'data:text/vtt;charset=utf-8,' + encodeURIComponent(vtt);
-        } catch (e) {
-            console.log("fetchAndCleanSubtitle error for " + subtitleUrl + ": " + e);
         }
         return null;
     }
@@ -565,20 +549,20 @@ class DefaultExtension extends MProvider {
                 return aMatch - bMatch;
             });
 
-            // Attach subtitles when the setting is enabled
-            // Oppai.stream subtitle URL = video base URL + _SUB_1.vtt?v=1
+            // Attach subtitles when the setting is enabled.
+            // Return the raw VTT URL — NOT a data: URI — so the FFI payload
+            // stays small. The native player in watch_screen.dart handles
+            // remote .vtt URLs directly via SubtitleTrack.
             const loadSubs = new SharedPreferences().get("load_subtitles");
             const wantSubs = (loadSubs === undefined || loadSubs === true || loadSubs === "true");
             if (wantSubs) {
-                console.log("Loading subtitles for " + videos.length + " videos");
+                console.log("Attaching subtitle URLs for " + videos.length + " videos");
                 for (const video of videos) {
                     try {
                         const subUrl = this.buildSubtitleUrl(video.url);
                         if (subUrl) {
-                            const cleanedUrl = await this.fetchAndCleanSubtitle(subUrl);
-                            if (cleanedUrl) {
-                                video.subtitles = [{ url: cleanedUrl, label: "English" }];
-                            }
+                            video.subtitles = [{ file: subUrl, label: "English" }];
+                            console.log("Subtitle URL attached: " + subUrl);
                         }
                     } catch (subErr) {
                         console.log("Subtitle attach error: " + subErr);
@@ -619,13 +603,16 @@ class DefaultExtension extends MProvider {
                 }
             },
             {
+                // NOTE: Only 'title', 'summary', and 'value' are supported by
+                // SourcePreference.fromJson() in the bridge (v0.0.4). The keys
+                // 'dialogTitle' and 'dialogMessage' are NOT in the schema and
+                // cause an offset overflow in the QuickJS TrampolinePage when
+                // getSourcePreferences() is called, crashing the app at startup.
                 key: "overrideBaseUrl",
                 editTextPreference: {
                     title: "Override Base URL",
                     summary: "Change the base URL if the site has moved (e.g. https://oppai.stream)",
-                    value: "https://oppai.stream",
-                    dialogTitle: "Override Base URL",
-                    dialogMessage: "Enter the full base URL of the site",
+                    value: "https://oppai.stream"
                 }
             }
         ];
