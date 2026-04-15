@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.1.7",
+    "version": "0.1.8",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": true,
@@ -280,70 +280,72 @@ class DefaultExtension extends MProvider {
             }
             
             const currentSlug = this.getAnimeSlugFromUrl(fullUrl);
-            const baseAnimeName = this.getBaseAnimeName(currentSlug);
-            console.log("Current slug: " + currentSlug + ", Base name: " + baseAnimeName);
+            console.log("Current slug: " + currentSlug);
             
             const chapters = [];
-            
-            const episodeElements = doc.select("div.more-same-eps div.in-grid.episode-shown, div.other-episodes div.in-grid.episode-shown");
-            console.log("Found potential episodes: " + episodeElements.length);
-            
-            for (const element of episodeElements) {
+
+            // --- Primary strategy: episode number buttons (div.more-eps-p a.show-ep-num) ---
+            // These are statically rendered in the HTML and contain all same-series episodes.
+            // URL format: /watch?e=<slug>  (no &for= noise)
+            const epNumLinks = doc.select("div.more-eps-p a.show-ep-num");
+            console.log("Episode number links found: " + epNumLinks.length);
+
+            for (const link of epNumLinks) {
                 try {
-                    const linkElement = element.selectFirst("a");
-                    let episodeUrl = linkElement?.attr("href") || linkElement?.getHref || "";
-                    
-                    if (!episodeUrl) continue;
-                    
-                    if (episodeUrl.includes("&for=episode-more")) {
-                        episodeUrl = episodeUrl.replace("&for=episode-more", "");
+                    let epUrl = link.attr("href") || link.getHref || "";
+                    if (!epUrl) continue;
+                    if (!epUrl.startsWith("http")) {
+                        epUrl = `${this.baseUrl}${epUrl}`;
                     }
-                    
-                    if (!episodeUrl.startsWith("http")) {
-                        episodeUrl = `${this.baseUrl}${episodeUrl}`;
-                    }
-                    
-                    const episodeSlug = this.getAnimeSlugFromUrl(episodeUrl);
-                    const episodeBaseName = this.getBaseAnimeName(episodeSlug);
-                    
-                    if (baseAnimeName && episodeBaseName && 
-                        episodeBaseName.toLowerCase() === baseAnimeName.toLowerCase()) {
-                        
-                        const epNumber = element.selectFirst("h5 .ep, .ep")?.text?.trim() || "";
-                        const epTitle = element.selectFirst("h5 .title, .title-ep")?.text?.trim() || "";
-                        
-                        let name = "";
-                        if (epNumber) {
-                            name = `Episode ${epNumber}`;
-                            if (epTitle) name += `: ${epTitle}`;
-                        } else if (epTitle) {
-                            name = epTitle;
-                        } else {
-                            const urlEpMatch = episodeSlug.match(/-(\d+)$/);
-                            if (urlEpMatch) {
-                                name = `Episode ${urlEpMatch[1]}`;
-                            } else {
-                                name = "Episode";
-                            }
-                        }
-                        
-                        if (!chapters.some(c => c.url === episodeUrl)) {
-                            chapters.push({ 
-                                name, 
-                                url: episodeUrl,
-                                dateUpload: null
-                            });
-                            console.log("Added episode: " + name + " -> " + episodeUrl);
-                        }
+                    const epSlug = this.getAnimeSlugFromUrl(epUrl);
+                    const epMatch = epSlug.match(/-(\d+)$/);
+                    const epNum = epMatch ? epMatch[1] : link.text?.trim() || "";
+                    const name = epNum ? `Episode ${epNum}` : "Episode";
+                    if (!chapters.some(c => c.url === epUrl)) {
+                        chapters.push({ name, url: epUrl, dateUpload: null });
+                        console.log("Added ep (num-btn): " + name + " -> " + epUrl);
                     }
                 } catch (e) {
                     continue;
                 }
             }
-            
+
+            // --- Secondary strategy: more-same-eps card grid ---
+            // Fallback when the number buttons are missing/empty (shouldn't happen normally).
+            if (chapters.length === 0) {
+                const baseAnimeName = this.getBaseAnimeName(currentSlug);
+                console.log("Fallback: base anime name = " + baseAnimeName);
+                const episodeElements = doc.select("div.more-same-eps div.in-grid.episode-shown");
+                console.log("Card elements found: " + episodeElements.length);
+                for (const element of episodeElements) {
+                    try {
+                        const linkEl = element.selectFirst("a");
+                        let episodeUrl = linkEl?.attr("href") || linkEl?.getHref || "";
+                        if (!episodeUrl) continue;
+                        episodeUrl = episodeUrl.replace("&for=episode-more", "");
+                        if (!episodeUrl.startsWith("http")) {
+                            episodeUrl = `${this.baseUrl}${episodeUrl}`;
+                        }
+                        const epSlug = this.getAnimeSlugFromUrl(episodeUrl);
+                        const epBase = this.getBaseAnimeName(epSlug);
+                        if (baseAnimeName && epBase && epBase.toLowerCase() === baseAnimeName.toLowerCase()) {
+                            const epMatch = epSlug.match(/-(\d+)$/);
+                            const name = epMatch ? `Episode ${epMatch[1]}` : "Episode";
+                            if (!chapters.some(c => c.url === episodeUrl)) {
+                                chapters.push({ name, url: episodeUrl, dateUpload: null });
+                                console.log("Added ep (card): " + name + " -> " + episodeUrl);
+                            }
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+
+            // Always ensure the current episode is included
             if (!chapters.some(c => c.url === fullUrl)) {
-                const currentEpMatch = currentSlug.match(/-(\d+)$/);
-                const epNum = currentEpMatch ? currentEpMatch[1] : "1";
+                const epMatch = currentSlug.match(/-(\d+)$/);
+                const epNum = epMatch ? epMatch[1] : "1";
                 chapters.unshift({ 
                     name: `Episode ${epNum}`, 
                     url: fullUrl,
