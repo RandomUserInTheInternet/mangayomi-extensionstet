@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "isManga": false,
     "itemType": 1,
-    "version": "0.1.8",
+    "version": "0.1.9",
     "dateFormat": "",
     "dateFormatLocale": "",
     "isNsfw": true,
@@ -666,4 +666,6 @@ class DefaultExtension extends MProvider {
     }
 }
 
+var extension = new DefaultExtension();
+var extention = new DefaultExtension();
 
